@@ -12,7 +12,7 @@
 
 2. **Get your repository URL**:
    ```
-   https://github.com/YOUR_USERNAME/CIVOPS-Radar.git
+   https://github.com/Nefarious1313/CIVOPS-Radar.git
    ```
 
 ### 2. Deploy to GitHub
@@ -43,7 +43,7 @@ After pushing to GitHub, update the mobile installer with your repository URL:
 nano termux/mobile_install.sh
 
 # Update this line with your GitHub URL:
-GITHUB_REPO="https://github.com/YOUR_USERNAME/CIVOPS-Radar.git"
+GITHUB_REPO="https://github.com/Nefarious1313/CIVOPS-Radar.git"
 ```
 
 ## 📱 Mobile Installation
@@ -151,7 +151,7 @@ curl http://localhost:5000/api/statistics
 ### Local Development
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/CIVOPS-Radar.git
+git clone https://github.com/Nefarious1313/CIVOPS-Radar.git
 cd CIVOPS-Radar
 
 # Install dependencies
@@ -311,9 +311,9 @@ pip install -r requirements.txt
 ## 📞 Support
 
 ### Getting Help
-- **GitHub Issues**: [Report bugs](https://github.com/YOUR_USERNAME/CIVOPS-Radar/issues)
-- **GitHub Discussions**: [Ask questions](https://github.com/YOUR_USERNAME/CIVOPS-Radar/discussions)
-- **Documentation**: [Read the docs](https://github.com/YOUR_USERNAME/CIVOPS-Radar/docs)
+- **GitHub Issues**: [Report bugs](https://github.com/Nefarious1313/CIVOPS-Radar/issues)
+- **GitHub Discussions**: [Ask questions](https://github.com/Nefarious1313/CIVOPS-Radar/discussions)
+- **Documentation**: [Read the docs](https://github.com/Nefarious1313/CIVOPS-Radar/docs)
 
 ### Contributing
 1. Fork the repository

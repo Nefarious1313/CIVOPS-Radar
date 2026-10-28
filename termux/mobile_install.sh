@@ -82,10 +82,7 @@ install_packages() {
 # Install Python dependencies
 install_python_deps() {
     info "Installing Python dependencies..."
-    
-    # Upgrade pip first
-    pip install --upgrade pip
-    
+   
     # Install from requirements.txt if available
     if [[ -f "requirements.txt" ]]; then
         pip install -r requirements.txt

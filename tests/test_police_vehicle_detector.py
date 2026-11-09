@@ -105,6 +105,27 @@ class TestPoliceVehicleDetector(unittest.TestCase):
         self.assertFalse(res.is_police_vehicle)
         self.assertEqual(res.confidence, "NONE")
 
+    def test_eap_capabilities_boost(self):
+        """OUI match + EAP capabilities should raise score above base_confidence."""
+        # CradlePoint OUI (base_confidence=40) + hidden SSID (-> 70) + EAP (-> +15 = 85)
+        res = self.detector.analyze(
+            bssid="00:30:44:aa:bb:cc",
+            ssid="",
+            capabilities="[WPA2-EAP-CCMP][ESS]",
+        )
+        self.assertTrue(res.is_police_vehicle)
+        # EAP bump should push above the hidden-SSID baseline of 70
+        self.assertGreater(res.confidence_score, 70)
+        self.assertTrue(any("Enterprise auth" in r for r in res.reasons))
+        self.assertIn("enterprise_auth", res.indicators)
+
+    def test_firstnet_ssid_is_medium(self):
+        """SSID containing 'FirstNet' should be flagged at MEDIUM confidence."""
+        res = self.detector.analyze(bssid="aa:bb:cc:dd:ee:ff", ssid="FirstNet-Patrol")
+        self.assertTrue(res.is_police_vehicle)
+        self.assertEqual(res.confidence, "MEDIUM")
+        self.assertTrue(any("FirstNet" in r for r in res.reasons))
+
     # --- Data integrity ------------------------------------------------------
     def test_oui_keys_are_well_formed(self):
         for oui in POLICE_VEHICLE_OUIS:

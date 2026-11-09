@@ -465,6 +465,31 @@
             from { opacity: 1; transform: scaleY(1); }
             to { opacity: 0; transform: scaleY(0.3); }
         }
+
+        .direction-spike {
+            position: absolute;
+            width: 2px;
+            border-radius: 1px;
+            transform-origin: top center;
+            pointer-events: none;
+            opacity: 0.75;
+        }
+        .direction-spike.spike-normal   { background: rgba(16, 185, 129, 0.5); height: 18px; }
+        .direction-spike.spike-flock    { background: rgba(217, 70, 239, 0.8);  height: 26px; }
+        .direction-spike.spike-police   { background: rgba(59, 130, 246, 0.9);  height: 26px; }
+
+        .trend-label {
+            position: absolute;
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            text-shadow: 0 0 4px #000;
+            z-index: 20;
+        }
+        .trend-label.approaching { color: #ef4444; }
+        .trend-label.receding    { color: #10b981; }
+        .trend-label.stable      { color: #94a3b8; }
     </style>
 </head>
 <body class="bg-slate-900 text-green-400">
@@ -606,6 +631,7 @@
                 this.isScanning = false;
                 this.updateInterval = null;
                 this.activeFilter = 'all';
+                this.rssiHistory = new Map(); // bssid -> [level, ...] (last 3 readings)
                 
                 this.init();
             }
@@ -769,6 +795,12 @@
             processSignals(signals) {
                 signals.forEach(signal => {
                     this.networks.set(signal.bssid, signal);
+                    // Track RSSI history for trend arrows
+                    const hist = this.rssiHistory.get(signal.bssid) || [];
+                    hist.push(signal.level);
+                    if (hist.length > 3) hist.shift();
+                    this.rssiHistory.set(signal.bssid, hist);
+                    signal._rssiTrend = this._computeTrend(hist);
                 });
                 this.updateAlerts();
             }
@@ -805,9 +837,17 @@
                 }
             }
             
+            _computeTrend(hist) {
+                if (hist.length < 2) return 'stable';
+                const delta = hist[hist.length - 1] - hist[0];
+                if (delta > 3) return 'approaching';   // RSSI more positive = closer
+                if (delta < -3) return 'receding';
+                return 'stable';
+            }
+
             updateRadarDisplay() {
-                // Clear existing network dots
-                const existingDots = this.radarScreen.querySelectorAll('.network-dot');
+                // Clear existing network dots, spikes, and trend labels
+                const existingDots = this.radarScreen.querySelectorAll('.network-dot, .direction-spike, .trend-label');
                 existingDots.forEach(dot => dot.remove());
                 
                 // Add network dots
@@ -1035,7 +1075,40 @@
                 dot.addEventListener('mouseleave', () => {
                     dot.style.transform = 'translate(-50%, -50%) scale(1)';
                 });
-                
+
+                // Direction spike — points outward along the bearing angle
+                const spike = document.createElement('div');
+                spike.className = 'direction-spike';
+                if (network.is_police_vehicle) spike.classList.add('spike-police');
+                else if (network.is_flock)     spike.classList.add('spike-flock');
+                else                            spike.classList.add('spike-normal');
+
+                const angleRad  = (network.position.angle * Math.PI) / 180;
+                // spike top-center should sit exactly at the dot center; shift it so the
+                // top of the spike touches the dot edge and points outward.
+                const dotRadius = network.is_flock || network.is_police_vehicle ? 7 : 5; // px, half dot size
+                const spikeOffsetX = x + Math.cos(angleRad) * dotRadius;
+                const spikeOffsetY = y + Math.sin(angleRad) * dotRadius;
+
+                spike.style.left = `${spikeOffsetX}px`;
+                spike.style.top  = `${spikeOffsetY}px`;
+                // Rotate so the spike points from center outward; CSS transform-origin is 'top center'
+                // angle 0 = right (+x), but CSS 0deg = up, so we offset by 90deg
+                spike.style.transform = `translate(-50%, 0) rotate(${network.position.angle + 90}deg)`;
+                this.radarScreen.appendChild(spike);
+
+                // Trend label for Flock and police dots
+                if ((network.is_flock || network.is_police_vehicle) && network._rssiTrend) {
+                    const trendSymbol = { approaching: '▲', receding: '▼', stable: '·' };
+                    const trendLabel = document.createElement('div');
+                    trendLabel.className = `trend-label ${network._rssiTrend}`;
+                    trendLabel.textContent = trendSymbol[network._rssiTrend] || '·';
+                    // Position it offset from the dot (above and slightly right)
+                    trendLabel.style.left = `${x + 10}px`;
+                    trendLabel.style.top  = `${y - 12}px`;
+                    this.radarScreen.appendChild(trendLabel);
+                }
+
                 return dot;
             }
         }

@@ -232,6 +232,56 @@ POLICE_VEHICLE_OUIS: Dict[str, Dict[str, Any]] = {
         "device_type": "Police In-Car Router / Mobile Gateway",
     },
 
+    # --- MDT tablets (Panasonic Toughbook, Getac) ---
+    "00:40:f4": {
+        "vendor": "Panasonic Communications",
+        "category": "mdt",
+        "description": "Panasonic Toughbook MDT (police in-car laptop)",
+        "base_confidence": 42,
+        "device_type": "Police Mobile Data Terminal (Toughbook)",
+    },
+    "00:00:04": {
+        "vendor": "Panasonic Communications Corporation",
+        "category": "mdt",
+        "description": "Panasonic MDT networking hardware",
+        "base_confidence": 35,
+        "device_type": "Police Mobile Data Terminal",
+    },
+    "e8:9f:80": {
+        "vendor": "Getac Technology Corporation",
+        "category": "mdt",
+        "description": "Getac rugged tablet / MDT",
+        "base_confidence": 42,
+        "device_type": "Police Mobile Data Terminal (Getac)",
+    },
+
+    # --- Additional CradlePoint OUIs ---
+    "28:3b:82": {
+        "vendor": "CradlePoint, Inc",
+        "category": "router",
+        "description": "CradlePoint IBR/AER in-car router",
+        "base_confidence": 40,
+        "device_type": "Police In-Car Router / Mobile Gateway",
+    },
+
+    # --- Digi International (fleet cellular routers) ---
+    "00:40:9d": {
+        "vendor": "Digi International Inc.",
+        "category": "router",
+        "description": "Digi WR/IX fleet cellular router",
+        "base_confidence": 38,
+        "device_type": "Police In-Car Router / Mobile Gateway",
+    },
+
+    # --- Utility / Public Safety FirstNet routers ---
+    "4c:14:a3": {
+        "vendor": "Franklin Wireless",
+        "category": "router",
+        "description": "Franklin T10 / FirstNet mobile hotspot",
+        "base_confidence": 35,
+        "device_type": "Suspected FirstNet / Public-Safety Hotspot",
+    },
+
     # --- Dispatch / two-way radio equipment ---
     "00:04:7d": {
         "vendor": "Motorola Solutions Inc.",
@@ -365,6 +415,8 @@ POLICE_SSID_PATTERNS: List[Tuple[str, str, str, int, str]] = [
      "Police In-Car Router / Mobile Gateway", 65, "equipment"),
     (r'(?i)\bsierra[\s_-]+wireless\b', "SSID references Sierra Wireless router",
      "Police In-Car Router / Mobile Gateway", 65, "equipment"),
+    (r'(?i)\bfirstnet\b', "SSID references FirstNet (AT&T public-safety network)",
+     "FirstNet / Public-Safety Device", 72, "equipment"),
 
     # --- Municipal / fleet (MEDIUM-LOW, generic) ---
     (r'(?i)\bmunicipal\b', "SSID references 'municipal'",
@@ -451,6 +503,29 @@ class PoliceVehicleDetector:
                 confidence_score = max(confidence_score, entry["base_confidence"])
                 reasons.append(
                     f"Shares hardware vendor with {entry['description']} ({oui})"
+                )
+
+        # --- Step 2b: Capability string analysis (EAP boost) -------------------
+        if oui_matched:
+            caps = (capabilities or "").upper()
+            if "EAP" in caps:
+                new_score = min(95, confidence_score + 15)
+                if new_score > confidence_score:
+                    confidence_score = new_score
+                    reasons.append("Enterprise auth (EAP) on fleet-grade hardware")
+                    if "enterprise_auth" not in indicators:
+                        indicators.append("enterprise_auth")
+
+        # --- Step 2c: Frequency band hint (5 GHz on hidden fleet router) -------
+        if oui_matched:
+            entry = POLICE_VEHICLE_OUIS[oui]
+            if (entry["category"] in ("router", "alpr")
+                    and frequency is not None and frequency >= 5000
+                    and is_hidden):
+                if confidence_score < 75:
+                    confidence_score = 75
+                reasons.append(
+                    "5 GHz band on hidden fleet router (less common for residential)"
                 )
 
         # --- Step 3: Confidence tier --------------------------------------------

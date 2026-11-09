@@ -1,0 +1,36 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#050811"
+        android:pathData="M0,0h108v108h-108z" />
+    <!-- Concentric radar rings -->
+    <path
+        android:strokeColor="#10B981"
+        android:strokeWidth="1.5"
+        android:pathData="M54,18 A36,36 0 1,0 54,90 A36,36 0 1,0 54,18" />
+    <path
+        android:strokeColor="#065F46"
+        android:strokeWidth="1.2"
+        android:pathData="M54,30 A24,24 0 1,0 54,78 A24,24 0 1,0 54,30" />
+    <path
+        android:strokeColor="#064E3B"
+        android:strokeWidth="1"
+        android:pathData="M54,42 A12,12 0 1,0 54,66 A12,12 0 1,0 54,42" />
+    <!-- Center crosshair and sweep -->
+    <path
+        android:strokeColor="#10B981"
+        android:strokeWidth="1"
+        android:pathData="M54,14 L54,94 M14,54 L94,54" />
+    <!-- Sweep line -->
+    <path
+        android:strokeColor="#34D399"
+        android:strokeWidth="2"
+        android:pathData="M54,54 L80,28" />
+    <!-- Center blip -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M54,52 A2,2 0 1,0 54,56 A2,2 0 1,0 54,52" />
+</vector>

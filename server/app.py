@@ -27,6 +27,13 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from flock_detector import detector as flock_detector
 
+try:
+    from police_vehicle_detector import detector as police_vehicle_detector
+except ImportError:
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from police_vehicle_detector import detector as police_vehicle_detector
+
 # Configuration
 RADAR_DIR = os.environ.get("RADAR_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(RADAR_DIR, "data", "scans.db")
@@ -74,7 +81,10 @@ class RadarData:
                 scan_count INTEGER DEFAULT 1,
                 is_flock BOOLEAN DEFAULT 0,
                 flock_type TEXT DEFAULT '',
-                alpr_confidence TEXT DEFAULT ''
+                alpr_confidence TEXT DEFAULT '',
+                is_police_vehicle BOOLEAN DEFAULT 0,
+                police_vehicle_type TEXT DEFAULT '',
+                police_confidence TEXT DEFAULT ''
             )
         ''')
         
@@ -85,11 +95,14 @@ class RadarData:
             CREATE INDEX IF NOT EXISTS idx_timestamp ON scans(timestamp)
         ''')
         
-        # Ensure Flock columns exist for older databases
+        # Ensure Flock / police-vehicle columns exist for older databases
         for col_def in [
             "is_flock BOOLEAN DEFAULT 0",
             "flock_type TEXT DEFAULT ''",
-            "alpr_confidence TEXT DEFAULT ''"
+            "alpr_confidence TEXT DEFAULT ''",
+            "is_police_vehicle BOOLEAN DEFAULT 0",
+            "police_vehicle_type TEXT DEFAULT ''",
+            "police_confidence TEXT DEFAULT ''"
         ]:
             try:
                 cursor.execute(f"ALTER TABLE scans ADD COLUMN {col_def}")
@@ -97,6 +110,7 @@ class RadarData:
                 pass
                 
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_flock ON scans(is_flock)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_police_vehicle ON scans(is_police_vehicle)")
         
         conn.commit()
         conn.close()
@@ -110,13 +124,14 @@ class RadarData:
             SELECT 
                 bssid, ssid, capabilities, frequency, level, distance, 
                 risk_score, is_hidden, is_open, vendor, first_seen, last_seen,
-                scan_count, timestamp, is_flock, flock_type, alpr_confidence
+                scan_count, timestamp, is_flock, flock_type, alpr_confidence,
+                is_police_vehicle, police_vehicle_type, police_confidence
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY bssid ORDER BY timestamp DESC, id DESC) as rn
                 FROM scans
             )
             WHERE rn = 1
-            ORDER BY is_flock DESC, timestamp DESC
+            ORDER BY is_police_vehicle DESC, is_flock DESC, timestamp DESC
             LIMIT ?
         '''
         
@@ -140,6 +155,23 @@ class RadarData:
                     item['alpr_confidence'] = f_res.confidence
                     if f_res.is_flock and item.get('vendor') in ['Unknown', None, '']:
                         item['vendor'] = f_res.vendor
+
+            # Retroactive police-vehicle check for rows saved before this detector existed
+            if not item.get('is_police_vehicle'):
+                p_res = police_vehicle_detector.analyze(
+                    item.get('bssid'),
+                    item.get('ssid'),
+                    item.get('capabilities'),
+                    item.get('level'),
+                    item.get('frequency')
+                )
+                if p_res.confidence_score > 0:
+                    item['police_confidence'] = p_res.confidence
+                    if p_res.is_police_vehicle:
+                        item['is_police_vehicle'] = 1
+                        item['police_vehicle_type'] = p_res.device_type
+                        if item.get('vendor') in ['Unknown', None, '']:
+                            item['vendor'] = p_res.vendor
         
         conn.close()
         return results
@@ -177,6 +209,10 @@ class RadarData:
         
         cursor.execute("SELECT COUNT(DISTINCT bssid) FROM scans WHERE is_flock = 1 OR flock_type LIKE '%ALPR%'")
         stats['alpr_cameras'] = cursor.fetchone()[0] or 0
+        
+        # Police / law-enforcement vehicles
+        cursor.execute("SELECT COUNT(DISTINCT bssid) FROM scans WHERE is_police_vehicle = 1")
+        stats['police_vehicles'] = cursor.fetchone()[0] or 0
         
         conn.close()
         return stats
@@ -316,16 +352,21 @@ def get_signals():
                 'is_flock': bool(scan.get('is_flock')),
                 'flock_type': scan.get('flock_type') or '',
                 'alpr_confidence': scan.get('alpr_confidence') or 'NONE',
+                'is_police_vehicle': bool(scan.get('is_police_vehicle')),
+                'police_vehicle_type': scan.get('police_vehicle_type') or '',
+                'police_confidence': scan.get('police_confidence') or 'NONE',
                 'position': position
             }
             radar_signals.append(signal)
         
-        # Check if any Flock cameras are active
+        # Check if any Flock cameras or police vehicles are active
         flock_found = any(s['is_flock'] for s in radar_signals)
+        police_found = any(s['is_police_vehicle'] for s in radar_signals)
         
         return jsonify({
             'signals': radar_signals,
             'flock_detected': flock_found,
+            'police_vehicle_detected': police_found,
             'timestamp': datetime.now().isoformat()
         })
     
@@ -419,13 +460,14 @@ def inject_flock_demo():
         ]
         
         for cam in demo_cameras:
+            # Delete any previous demo row with the same BSSID so re-running is idempotent.
+            cursor.execute('DELETE FROM scans WHERE bssid = ?', (cam[0],))
             cursor.execute('''
                 INSERT INTO scans (
                     bssid, ssid, capabilities, frequency, level, distance,
                     risk_score, is_hidden, is_open, vendor, first_seen,
                     last_seen, scan_count, is_flock, flock_type, alpr_confidence
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO NOTHING
             ''', cam)
             
         conn.commit()
@@ -434,6 +476,76 @@ def inject_flock_demo():
             'status': 'demo_cameras_injected',
             'count': len(demo_cameras),
             'message': 'Sample Flock Safety cameras injected into database for testing'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/police-vehicle/status')
+def get_police_vehicle_status():
+    """Get active police / law-enforcement vehicle status"""
+    try:
+        scans = radar_data.get_latest_scans(limit=100)
+        vehicles = [s for s in scans if s.get('is_police_vehicle')]
+
+        # Sort by distance (closest first)
+        vehicles.sort(key=lambda s: s.get('distance') or 999.0)
+
+        return jsonify({
+            'status': 'alert' if vehicles else 'clear',
+            'police_vehicle_detected': len(vehicles) > 0,
+            'vehicle_count': len(vehicles),
+            'nearest_vehicle': vehicles[0] if vehicles else None,
+            'vehicles': vehicles,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/police-vehicle/demo', methods=['POST', 'GET'])
+def inject_police_vehicle_demo():
+    """Inject realistic demo police-vehicle equipment for testing and validation"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        current_time = datetime.now().isoformat()
+
+        demo_vehicles = [
+            (
+                "70:1a:d5:12:34:56", "MPD-Fleet", "[WPA2-PSK-CCMP][ESS]",
+                2437, -52, 6.1, 95, 0, 0, "Avigilon (Motorola Solutions)",
+                current_time, current_time, 14, 1,
+                "Police Department Vehicle", "CONFIRMED"
+            ),
+            (
+                "00:30:44:ab:cd:ef", "", "[WPA2-PSK-CCMP][ESS]",
+                5180, -61, 12.4, 70, 1, 0, "CradlePoint, Inc",
+                current_time, current_time, 9, 1,
+                "Suspected Police In-Car Router / Mobile Gateway (Hidden SSID)", "MEDIUM"
+            ),
+            (
+                "00:04:7d:11:22:33", "Dispatch-1", "[WPA2-PSK-CCMP][ESS]",
+                2412, -48, 4.2, 95, 0, 0, "Motorola Solutions Inc.",
+                current_time, current_time, 21, 1,
+                "Police Dispatch Vehicle", "CONFIRMED"
+            ),
+        ]
+
+        for vehicle in demo_vehicles:
+            cursor.execute('''
+                INSERT INTO scans (
+                    bssid, ssid, capabilities, frequency, level, distance,
+                    risk_score, is_hidden, is_open, vendor, first_seen,
+                    last_seen, scan_count, is_police_vehicle,
+                    police_vehicle_type, police_confidence
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', vehicle)
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'status': 'demo_vehicles_injected',
+            'count': len(demo_vehicles),
+            'message': 'Sample police-vehicle equipment injected into database for testing'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

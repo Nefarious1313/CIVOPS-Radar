@@ -12,6 +12,7 @@ CIVOPS-Radar is an open-source, privacy-focused alternative to commercial closed
 
 - 🔍 **Passive Wi-Fi Scanning** - Uses Termux:API for non-intrusive network detection
 - 🚨 **ALPR Camera Detection** - Identifies Flock Safety & surveillance cameras via OUI fingerprinting and SSID patterns
+- 🚓 **Police Vehicle Detection** - Heuristically flags police vehicle equipment (in-car routers, mobile ALPR, dispatch radios) using IEEE-verified OUIs and SSID patterns
 - 📡 **Live Radar Visualization** - HTML5 Canvas-based circular radar display
 - 📊 **Signal Analysis** - RSSI-based distance estimation and signal strength tracking
 - 🛡️ **Risk Assessment** - Automated scoring of detected networks based on security factors
@@ -111,6 +112,16 @@ CIVOPS-Radar/
 - Retroactive re-analysis of pre-existing scan entries on server start
 - API endpoints: `GET /api/flock/status`, `GET|POST /api/flock/demo`
 - UI: pulsing purple radar dots and alert banner for detected cameras
+
+### 6. police-vehicle-detector
+- Heuristic identification of police / law-enforcement vehicle equipment from passive Wi-Fi scans
+- Vendor OUIs verified against the IEEE MA-L registry (mobile ALPR, in-car routers, dispatch radios)
+- SSID naming heuristics for agency / municipal fleet equipment
+- Confidence scoring: `CONFIRMED` / `HIGH` / `MEDIUM` / `LOW` / `NONE`
+- OUI-only matches are recorded as LOW suspicion and do not raise an alert
+- API endpoints: `GET /api/police-vehicle/status`, `GET|POST /api/police-vehicle/demo`
+- UI: blue radar dots, alert banner, filter button, and statistics counter
+- See `docs/TECH.md` for the detection model and known limitations
 
 ## Database Migration
 

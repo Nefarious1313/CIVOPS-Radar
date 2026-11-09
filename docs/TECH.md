@@ -186,6 +186,51 @@ Returns a `FlockDetection` dataclass with fields:
 
 ---
 
+### 6. Police Vehicle Detector (`server/police_vehicle_detector.py`)
+
+**Purpose**: Heuristically identify police / law-enforcement vehicle equipment from passive Wi-Fi scan data.
+
+**Why heuristic**: there is no universal Wi-Fi fingerprint for a police vehicle. Patrol-car mobile
+data terminals (MDTs) are usually Wi-Fi *clients* rather than access points, and in-car routers /
+ALPR links do not always broadcast a department-identifying SSID. Detection therefore combines two
+weak signals instead of relying on a single identifier.
+
+**Detection Methods**:
+
+| Method | Indicator | Confidence Score |
+|--------|-----------|-----------------|
+| SSID pattern (agency) | `police`, `sheriff`, `highway patrol`, `state police` | 85–88 → HIGH |
+| SSID pattern (abbreviation) | `mpd`, `nypd`, `fhp`, `chp`, ... | 80 → HIGH |
+| SSID pattern (fleet / MDT) | `mdt`, `fleet`, `municipal`, `cradlepoint` | 55–70 → MEDIUM |
+| SSID + vendor OUI | any SSID pattern combined with a verified police-equipment OUI | 95 → CONFIRMED |
+| Vendor OUI + hidden SSID | known OUI with a hidden SSID | 70 → MEDIUM |
+| Vendor OUI alone | known OUI, ordinary visible SSID | 35–45 → LOW (not flagged) |
+
+**Vendor OUI sources**: every OUI in `POLICE_VEHICLE_OUIS` was verified against the IEEE MA-L
+registry (`https://standards-oui.ieee.org/oui/oui.csv`). Categories: mobile ALPR (Avigilon,
+Genetec, Leonardo/Selex), mobile surveillance cameras (Bosch, FLIR, Axis, Vivotek), in-car routers
+(CradlePoint, Sierra Wireless / Semtech), dispatch radios (Motorola Solutions, Tait, Harris, Codan,
+Hytera).
+
+**Confidence Tiers**: same five tiers as the Flock detector (`CONFIRMED` ≥ 95, `HIGH` ≥ 80,
+`MEDIUM` ≥ 50, `LOW` > 0, `NONE` = 0).
+
+**Known limitations**:
+- High false-negative rate: most police vehicles broadcast nothing identifiable.
+- Possible false positives: a civilian SSID containing "police", or a CradlePoint / Axis device in a business.
+- The built-in SSID patterns are generic heuristics, not a database of real department SSIDs.
+  Tune `POLICE_SSID_PATTERNS` to your local area.
+
+**Key Class**: `PoliceVehicleDetector.analyze(bssid, ssid, capabilities, level, frequency)`
+Returns a `PoliceVehicleDetection` dataclass with fields: `is_police_vehicle`, `confidence`,
+`confidence_score`, `device_type`, `vendor`, `reasons`, `indicators`.
+
+**API Endpoints**:
+- `GET /api/police-vehicle/status` — current detection status and vehicle list
+- `GET|POST /api/police-vehicle/demo` — inject demo vehicles for UI testing
+
+---
+
 ## Database Schema
 
 ### Scans Table
@@ -208,7 +253,10 @@ CREATE TABLE scans (
     scan_count INTEGER DEFAULT 1,
     is_flock BOOLEAN DEFAULT 0,    -- Flock Safety / ALPR camera flag
     flock_type TEXT DEFAULT '',    -- Human-readable device classification
-    alpr_confidence TEXT DEFAULT '' -- Detection confidence tier
+    alpr_confidence TEXT DEFAULT '', -- Detection confidence tier
+    is_police_vehicle BOOLEAN DEFAULT 0, -- Police / law-enforcement vehicle flag
+    police_vehicle_type TEXT DEFAULT '', -- Human-readable vehicle classification
+    police_confidence TEXT DEFAULT ''   -- Detection confidence tier
 );
 ```
 
@@ -218,11 +266,12 @@ CREATE INDEX idx_bssid ON scans(bssid);
 CREATE INDEX idx_timestamp ON scans(timestamp);
 CREATE INDEX idx_level ON scans(level);
 CREATE INDEX idx_flock ON scans(is_flock);
+CREATE INDEX idx_police_vehicle ON scans(is_police_vehicle);
 ```
 
-> **Automatic Migration**: If `scans.db` was created before the Flock detection
-> feature, the server adds the three new columns automatically on startup using
-> `ALTER TABLE`. Existing data is preserved.
+> **Automatic Migration**: If `scans.db` was created before the Flock detection feature,
+> the server adds the Flock columns automatically on startup using `ALTER TABLE`. The same
+> mechanism adds the police-vehicle columns for older databases. Existing data is preserved.
 
 ## Signal Processing
 

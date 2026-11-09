@@ -45,6 +45,9 @@ Currently, no authentication is required. All endpoints are accessible locally. 
       "is_flock": false,
       "flock_type": "",
       "alpr_confidence": "NONE",
+      "is_police_vehicle": false,
+      "police_vehicle_type": "",
+      "police_confidence": "NONE",
       "position": {
         "x": 0.3,
         "y": 0.4,
@@ -77,7 +80,8 @@ Currently, no authentication is required. All endpoints are accessible locally. 
   "open_networks": 5,
   "hidden_networks": 2,
   "flock_cameras": 2,
-  "alpr_cameras": 3
+  "alpr_cameras": 3,
+  "police_vehicles": 1
 }
 ```
 
@@ -145,7 +149,65 @@ Currently, no authentication is required. All endpoints are accessible locally. 
 
 ---
 
-### 5. Export Scan Data
+### 5. Get Police Vehicle Status
+
+**Endpoint**: `GET /api/police-vehicle/status`
+
+**Description**: Returns the current police / law-enforcement vehicle detection status based on the latest scan data.
+
+**Response**:
+```json
+{
+  "status": "alert",
+  "police_vehicle_detected": true,
+  "vehicle_count": 2,
+  "nearest_vehicle": {
+    "bssid": "00:04:7d:11:22:33",
+    "ssid": "Dispatch-1",
+    "police_vehicle_type": "Police Dispatch Vehicle",
+    "police_confidence": "CONFIRMED",
+    "distance": 4.2,
+    "is_police_vehicle": true
+  },
+  "vehicles": [ "...array of scan objects..." ],
+  "timestamp": "2026-11-09T01:20:00"
+}
+```
+
+**`status` field values**:
+- `"alert"` — one or more police vehicles detected
+- `"clear"` — no police vehicle equipment found
+
+**Status Codes**:
+- `200`: Success
+- `500`: Internal server error
+
+---
+
+### 6. Inject Police Vehicle Demo Data
+
+**Endpoint**: `GET /api/police-vehicle/demo` or `POST /api/police-vehicle/demo`
+
+**Description**: Injects three realistic demo police-vehicle entries into the database for UI testing and demonstration.
+
+> ⚠️ **Warning**: This writes to the live `scans.db`. Use for testing/demo purposes only.
+
+**Response**:
+```json
+{
+  "status": "demo_vehicles_injected",
+  "count": 3,
+  "message": "Sample police-vehicle equipment injected into database for testing"
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `500`: Internal server error
+
+---
+
+### 7. Export Scan Data
 
 **Endpoint**: `GET /api/export/<format>`
 
@@ -276,6 +338,9 @@ interface NetworkSignal {
   is_flock: boolean;       // True if identified as Flock Safety / ALPR device
   flock_type: string;      // Human-readable device classification (empty if not Flock)
   alpr_confidence: string; // Detection confidence: CONFIRMED | HIGH | MEDIUM | LOW | NONE
+  is_police_vehicle: boolean;    // True if identified as police / law-enforcement vehicle equipment
+  police_vehicle_type: string;   // Human-readable vehicle classification (empty if not police)
+  police_confidence: string;     // Detection confidence: CONFIRMED | HIGH | MEDIUM | LOW | NONE
   position: {              // Radar position
     x: number;             // X coordinate (-1 to 1)
     y: number;             // Y coordinate (-1 to 1)
@@ -313,6 +378,7 @@ interface ScanStatistics {
   hidden_networks: number;    // Hidden SSID networks
   flock_cameras: number;      // Flock Safety ALPR cameras detected
   alpr_cameras: number;       // All ALPR cameras (Flock + other manufacturers)
+  police_vehicles: number;    // Police / law-enforcement vehicles detected
 }
 ```
 

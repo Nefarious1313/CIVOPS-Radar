@@ -206,6 +206,71 @@
         .network-item.is-flock:hover {
             background: rgba(217, 70, 239, 0.3);
         }
+
+        .network-dot.police-vehicle {
+            background: #3b82f6;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 15px #3b82f6, 0 0 30px #2563eb, 0 0 45px rgba(59, 130, 246, 0.6);
+            animation: policePulse 1.2s ease-in-out infinite;
+            z-index: 15;
+        }
+
+        .network-dot.police-vehicle::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 24px;
+            height: 24px;
+            border: 1.5px solid #60a5fa;
+            border-radius: 50%;
+            animation: policeRing 1.5s linear infinite;
+        }
+
+        @keyframes policePulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1.2); }
+            50% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.7); }
+        }
+
+        @keyframes policeRing {
+            0% { width: 14px; height: 14px; opacity: 1; }
+            100% { width: 36px; height: 36px; opacity: 0; }
+        }
+
+        .police-alert-banner {
+            position: absolute;
+            top: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 58, 138, 0.95);
+            border: 2px solid #60a5fa;
+            border-radius: 12px;
+            padding: 10px 20px;
+            color: #eff6ff;
+            z-index: 50;
+            box-shadow: 0 0 25px rgba(96, 165, 250, 0.6);
+            backdrop-filter: blur(10px);
+            display: none;
+            align-items: center;
+            gap: 12px;
+            animation: policeBannerPulse 1.5s infinite;
+        }
+
+        @keyframes policeBannerPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(96, 165, 250, 0.4); }
+            50% { box-shadow: 0 0 35px rgba(96, 165, 250, 0.9); }
+        }
+
+        .network-item.is-police-vehicle {
+            border: 1px solid rgba(59, 130, 246, 0.6);
+            background: rgba(37, 99, 235, 0.15);
+        }
+        .network-item.is-police-vehicle:hover {
+            background: rgba(59, 130, 246, 0.3);
+        }
         
         @keyframes lowRiskPulse {
             0%, 100% { opacity: 0.8; }
@@ -413,6 +478,15 @@
             </div>
         </div>
 
+        <!-- Police Vehicle Alert Banner -->
+        <div class="police-alert-banner" id="policeAlertBanner">
+            <span class="text-2xl animate-pulse">🚓</span>
+            <div>
+                <div class="font-bold text-blue-300 tracking-wide text-xs">POLICE VEHICLE ALERT</div>
+                <div class="text-sm font-semibold text-white" id="policeAlertDetail">Police vehicle equipment detected nearby</div>
+            </div>
+        </div>
+
         <!-- Radar Screen -->
         <div class="radar-screen" id="radarScreen">
             <div class="radar-center"></div>
@@ -434,6 +508,7 @@
                 <div class="flex space-x-1 text-xs">
                     <button id="filterAll" class="px-2 py-0.5 rounded bg-green-700 text-white font-bold transition">ALL</button>
                     <button id="filterFlock" class="px-2 py-0.5 rounded bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-500 font-bold transition">🚨 FLOCK (<span id="filterFlockCount">0</span>)</button>
+                    <button id="filterPolice" class="px-2 py-0.5 rounded bg-blue-900/80 hover:bg-blue-800 text-blue-200 border border-blue-500 font-bold transition">🚓 POLICE (<span id="filterPoliceCount">0</span>)</button>
                 </div>
             </div>
             <div id="networkItems"></div>
@@ -471,6 +546,10 @@
                     <span class="text-purple-300 font-bold">ALPR Nodes:</span>
                     <span id="alprCameras" class="text-purple-400 font-bold">0</span>
                 </div>
+                <div class="flex justify-between border-t border-blue-500/30 pt-2 mt-2">
+                    <span class="text-blue-300 font-bold">Police Vehicles:</span>
+                    <span id="policeVehicles" class="text-blue-400 font-bold">0</span>
+                </div>
             </div>
         </div>
         
@@ -488,6 +567,13 @@
                 </button>
                 <button id="flockDemoButton" class="button w-full bg-slate-800 hover:bg-slate-700 border border-purple-500/50 text-purple-300 px-2 py-1.5 rounded-lg text-xs font-semibold">
                     + Test Flock Camera (Demo)
+                </button>
+                <button id="policeScanButton" class="button w-full bg-gradient-to-r from-blue-700 to-cyan-600 hover:from-blue-800 hover:to-cyan-700 text-white px-3 py-2 rounded-lg font-semibold text-sm flex items-center justify-center space-x-2">
+                    <span>🚓</span>
+                    <span>Scan Police Vehicles</span>
+                </button>
+                <button id="policeDemoButton" class="button w-full bg-slate-800 hover:bg-slate-700 border border-blue-500/50 text-blue-300 px-2 py-1.5 rounded-lg text-xs font-semibold">
+                    + Test Police Vehicle (Demo)
                 </button>
                 <button id="exportButton" class="button w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-semibold text-sm">
                     Export Data
@@ -519,6 +605,7 @@
                 this.networks = new Map();
                 this.isScanning = false;
                 this.updateInterval = null;
+                this.activeFilter = 'all';
                 
                 this.init();
             }
@@ -533,6 +620,44 @@
                 this.scanButton.addEventListener('click', () => this.toggleScan());
                 this.exportButton.addEventListener('click', () => this.exportData());
                 this.clearButton.addEventListener('click', () => this.clearData());
+
+                document.getElementById('filterAll').addEventListener('click', () => this.setFilter('all'));
+                document.getElementById('filterFlock').addEventListener('click', () => this.setFilter('flock'));
+                document.getElementById('filterPolice').addEventListener('click', () => this.setFilter('police'));
+
+                const flockDemo = document.getElementById('flockDemoButton');
+                if (flockDemo) flockDemo.addEventListener('click', () => this.injectDemo('flock'));
+                const policeDemo = document.getElementById('policeDemoButton');
+                if (policeDemo) policeDemo.addEventListener('click', () => this.injectDemo('police'));
+
+                // The dedicated scan buttons trigger the same manual scan as the main button.
+                const flockScan = document.getElementById('flockScanButton');
+                if (flockScan) flockScan.addEventListener('click', () => this.startScan());
+                const policeScan = document.getElementById('policeScanButton');
+                if (policeScan) policeScan.addEventListener('click', () => this.startScan());
+            }
+
+            setFilter(filter) {
+                this.activeFilter = filter;
+                this.updateNetworkList();
+            }
+
+            async injectDemo(kind) {
+                try {
+                    const endpoint = kind === 'police' ? '/api/police-vehicle/demo' : '/api/flock/demo';
+                    const response = await fetch(endpoint, { method: 'POST' });
+                    const data = await response.json();
+                    if (data.error) {
+                        this.updateStatus('Demo failed: ' + data.error);
+                    } else {
+                        this.updateStatus('Demo data injected');
+                    }
+                    await this.updateSignals();
+                    this.updateStatistics();
+                } catch (error) {
+                    console.error('Demo injection failed:', error);
+                    this.updateStatus('Demo injection failed');
+                }
             }
             
             async toggleScan() {
@@ -630,7 +755,11 @@
                         this.processSignals(data.signals);
                         this.updateRadarDisplay();
                         this.updateNetworkList();
+                        this.updateAlerts();
                         this.updateLastUpdate(data.timestamp);
+                        // Server-side aggregate flags (fast path — avoids iterating all signals)
+                        if (!data.flock_detected) document.getElementById('flockAlertBanner').style.display = 'none';
+                        if (!data.police_vehicle_detected) document.getElementById('policeAlertBanner').style.display = 'none';
                     }
                 } catch (error) {
                     console.error('Failed to update signals:', error);
@@ -641,6 +770,39 @@
                 signals.forEach(signal => {
                     this.networks.set(signal.bssid, signal);
                 });
+                this.updateAlerts();
+            }
+
+            updateAlerts() {
+                const networks = Array.from(this.networks.values());
+                const flockHits = networks.filter(n => n.is_flock);
+                const policeHits = networks.filter(n => n.is_police_vehicle);
+
+                const flockBanner = document.getElementById('flockAlertBanner');
+                if (flockBanner) {
+                    if (flockHits.length > 0) {
+                        const nearest = flockHits.slice().sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
+                        document.getElementById('flockAlertDetail').textContent =
+                            `${flockHits.length} Flock / ALPR camera${flockHits.length > 1 ? 's' : ''} nearby` +
+                            (nearest ? ` — nearest ${nearest.distance != null ? Number(nearest.distance).toFixed(1) + 'm' : 'unknown distance'}` : '');
+                        flockBanner.style.display = 'flex';
+                    } else {
+                        flockBanner.style.display = 'none';
+                    }
+                }
+
+                const policeBanner = document.getElementById('policeAlertBanner');
+                if (policeBanner) {
+                    if (policeHits.length > 0) {
+                        const nearest = policeHits.slice().sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
+                        document.getElementById('policeAlertDetail').textContent =
+                            `${policeHits.length} police vehicle${policeHits.length > 1 ? 's' : ''} nearby` +
+                            (nearest ? ` — nearest ${nearest.distance != null ? Number(nearest.distance).toFixed(1) + 'm' : 'unknown distance'}` : '');
+                        policeBanner.style.display = 'flex';
+                    } else {
+                        policeBanner.style.display = 'none';
+                    }
+                }
             }
             
             updateRadarDisplay() {
@@ -662,9 +824,16 @@
             showNetworkInfo(network, event) {
                 const info = this.networkInfo;
                 const distText = (network.distance != null && !isNaN(network.distance)) ? Number(network.distance).toFixed(1) + 'm' : 'Unknown';
+                const flockTag = network.is_flock
+                    ? `<div class="mt-2 text-purple-400 font-bold text-xs">🚨 ${network.flock_type || 'Flock Camera'} &bull; ${network.alpr_confidence}</div>`
+                    : '';
+                const policeTag = network.is_police_vehicle
+                    ? `<div class="text-blue-400 font-bold text-xs">🚓 ${network.police_vehicle_type || 'Police Vehicle'} &bull; ${network.police_confidence}</div>`
+                    : '';
                 info.innerHTML = `
                     <div class="font-bold text-green-400">${network.ssid || 'Hidden Network'}</div>
                     <div class="text-xs text-gray-400">${network.bssid}</div>
+                    ${flockTag}${policeTag}
                     <div class="mt-2 space-y-1">
                         <div>Signal: ${network.level} dBm</div>
                         <div>Distance: ${distText}</div>
@@ -687,15 +856,39 @@
             }
             
             updateNetworkList() {
-                const networks = Array.from(this.networks.values())
+                let networks = Array.from(this.networks.values())
                     .sort((a, b) => b.risk_score - a.risk_score);
-                
-                this.networkList.innerHTML = networks.map(network => `
-                    <div class="network-item" data-bssid="${network.bssid}">
+
+                if (this.activeFilter === 'flock') {
+                    networks = networks.filter(n => n.is_flock);
+                } else if (this.activeFilter === 'police') {
+                    networks = networks.filter(n => n.is_police_vehicle);
+                }
+
+                // Update filter counters
+                const all = Array.from(this.networks.values());
+                document.getElementById('filterFlockCount').textContent = all.filter(n => n.is_flock).length;
+                document.getElementById('filterPoliceCount').textContent = all.filter(n => n.is_police_vehicle).length;
+
+                this.networkList.innerHTML = networks.map(network => {
+                    const classes = ['network-item'];
+                    if (network.is_flock) classes.push('is-flock');
+                    if (network.is_police_vehicle) classes.push('is-police-vehicle');
+
+                    let tag = '';
+                    if (network.is_police_vehicle) {
+                        tag = `<div class="text-blue-400 text-xs font-bold">🚓 ${network.police_vehicle_type || 'Police Vehicle'} (${network.police_confidence})</div>`;
+                    } else if (network.is_flock) {
+                        tag = `<div class="text-purple-400 text-xs font-bold">🚨 ${network.flock_type || 'Flock'} (${network.alpr_confidence})</div>`;
+                    }
+
+                    return `
+                    <div class="${classes.join(' ')}" data-bssid="${network.bssid}">
                         <div class="flex justify-between items-center">
                             <div>
                                 <div class="font-bold">${network.ssid || 'Hidden'}</div>
                                 <div class="text-xs text-gray-400">${network.bssid}</div>
+                                ${tag}
                             </div>
                             <div class="text-right">
                                 <div class="text-sm">${network.level} dBm</div>
@@ -705,7 +898,7 @@
                             </div>
                         </div>
                     </div>
-                `).join('');
+                `;}).join('');
                 
                 // Add click events to network items
                 this.networkList.querySelectorAll('.network-item').forEach(item => {
@@ -736,6 +929,9 @@
                     document.getElementById('highRiskNetworks').textContent = stats.high_risk_networks || 0;
                     document.getElementById('openNetworks').textContent = stats.open_networks || 0;
                     document.getElementById('hiddenNetworks').textContent = stats.hidden_networks || 0;
+                    document.getElementById('flockCameras').textContent = stats.flock_cameras || 0;
+                    document.getElementById('alprCameras').textContent = stats.alpr_cameras || 0;
+                    document.getElementById('policeVehicles').textContent = stats.police_vehicles || 0;
                 } catch (error) {
                     console.error('Failed to update statistics:', error);
                 }
@@ -811,7 +1007,11 @@
                 else if (network.risk_score > 30) riskClass = 'medium-risk';
                 
                 dot.classList.add(riskClass);
-                
+
+                // Classification styling (police vehicles take visual precedence)
+                if (network.is_flock) dot.classList.add('flock-camera');
+                if (network.is_police_vehicle) dot.classList.add('police-vehicle');
+
                 // Position on radar
                 const centerX = 300;
                 const centerY = 300;

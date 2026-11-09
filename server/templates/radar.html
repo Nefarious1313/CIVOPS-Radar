@@ -302,6 +302,22 @@
             50% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.8); }
         }
 
+        /* Drone / UAV Blip */
+        .network-dot.drone-uav {
+            background: #f59e0b;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 16px #f59e0b, 0 0 32px #d97706;
+            animation: drone-pulse 1.2s ease-in-out infinite;
+            z-index: 26;
+        }
+
+        @keyframes drone-pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1.2); }
+            50% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.8); }
+        }
+
         /* Bearing Direction Spikes */
         .direction-spike {
             position: absolute;
@@ -315,6 +331,7 @@
         .direction-spike.spike-normal { background: rgba(16, 185, 129, 0.45); height: 18px; }
         .direction-spike.spike-flock  { background: rgba(236, 72, 153, 0.9); height: 26px; box-shadow: 0 0 6px #ec4899; }
         .direction-spike.spike-police { background: rgba(59, 130, 246, 0.9); height: 26px; box-shadow: 0 0 6px #3b82f6; }
+        .direction-spike.spike-drone  { background: rgba(245, 158, 11, 0.9); height: 26px; box-shadow: 0 0 6px #f59e0b; }
 
         /* Trend Movement Indicator */
         .trend-label {
@@ -367,6 +384,13 @@
             border: 1px solid #60a5fa;
             color: #eff6ff;
             box-shadow: 0 0 24px rgba(96, 165, 250, 0.5);
+        }
+
+        .drone-alert-banner {
+            background: rgba(120, 53, 15, 0.92);
+            border: 1px solid #f59e0b;
+            color: #fffbeb;
+            box-shadow: 0 0 24px rgba(245, 158, 11, 0.5);
         }
 
         @keyframes banner-glow {
@@ -459,10 +483,11 @@
                 </div>
 
                 <!-- Filter Segmented Control -->
-                <div class="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold">
+                <div class="grid grid-cols-4 gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[10px] font-semibold">
                     <button id="filterAll" class="py-1 rounded bg-emerald-600 text-white transition text-center">ALL</button>
                     <button id="filterFlock" class="py-1 rounded hover:bg-pink-950/60 text-pink-300 border border-transparent hover:border-pink-800 transition text-center">🚨 FLOCK (<span id="filterFlockCount">0</span>)</button>
                     <button id="filterPolice" class="py-1 rounded hover:bg-blue-950/60 text-blue-300 border border-transparent hover:border-blue-800 transition text-center">🚓 POLICE (<span id="filterPoliceCount">0</span>)</button>
+                    <button id="filterDrone" class="py-1 rounded hover:bg-amber-950/60 text-amber-300 border border-transparent hover:border-amber-800 transition text-center">🛸 DRONE (<span id="filterDroneCount">0</span>)</button>
                 </div>
             </div>
 
@@ -472,12 +497,15 @@
             </div>
 
             <!-- Bottom Mini Controls in Sidebar -->
-            <div class="pt-2 border-t border-emerald-900/50 flex gap-2">
-                <button id="flockDemoButton" class="flex-1 py-1.5 px-2 bg-pink-950/50 hover:bg-pink-900/70 border border-pink-700/60 text-pink-300 rounded text-[10px] font-bold transition flex items-center justify-center gap-1">
-                    <span>+ FLOCK DEMO</span>
+            <div class="pt-2 border-t border-emerald-900/50 grid grid-cols-3 gap-1.5">
+                <button id="flockDemoButton" class="py-1.5 px-1 bg-pink-950/50 hover:bg-pink-900/70 border border-pink-700/60 text-pink-300 rounded text-[9px] font-bold transition flex items-center justify-center gap-1">
+                    <span>+ FLOCK</span>
                 </button>
-                <button id="policeDemoButton" class="flex-1 py-1.5 px-2 bg-blue-950/50 hover:bg-blue-900/70 border border-blue-700/60 text-blue-300 rounded text-[10px] font-bold transition flex items-center justify-center gap-1">
-                    <span>+ POLICE DEMO</span>
+                <button id="policeDemoButton" class="py-1.5 px-1 bg-blue-950/50 hover:bg-blue-900/70 border border-blue-700/60 text-blue-300 rounded text-[9px] font-bold transition flex items-center justify-center gap-1">
+                    <span>+ POLICE</span>
+                </button>
+                <button id="droneDemoButton" class="py-1.5 px-1 bg-amber-950/50 hover:bg-amber-900/70 border border-amber-700/60 text-amber-300 rounded text-[9px] font-bold transition flex items-center justify-center gap-1">
+                    <span>+ DRONE</span>
                 </button>
             </div>
         </section>
@@ -499,6 +527,14 @@
                     <div class="flex-1">
                         <div class="font-bold text-blue-200 text-[10px] tracking-wider uppercase">TACTICAL POLICE FLEET ALERT</div>
                         <div class="text-xs font-semibold text-white" id="policeAlertDetail">Police vehicle equipment detected nearby</div>
+                    </div>
+                </div>
+
+                <div class="hud-alert-banner drone-alert-banner" id="droneAlertBanner">
+                    <span class="text-xl">🛸</span>
+                    <div class="flex-1">
+                        <div class="font-bold text-amber-200 text-[10px] tracking-wider uppercase">DRONE / UAS RECONNAISSANCE ALERT</div>
+                        <div class="text-xs font-semibold text-white" id="droneAlertDetail">Unmanned aerial vehicle detected in airspace</div>
                     </div>
                 </div>
             </div>
@@ -574,6 +610,10 @@
                             <span class="text-blue-300 font-bold flex items-center gap-1">🚓 Police Fleet:</span>
                             <span id="policeVehicles" class="text-blue-400 font-extrabold text-sm">0</span>
                         </div>
+                        <div class="flex justify-between items-center py-1 px-2 rounded bg-amber-950/40 border border-amber-900/60">
+                            <span class="text-amber-300 font-bold flex items-center gap-1">🛸 Drone / UAS:</span>
+                            <span id="droneVehicles" class="text-amber-400 font-extrabold text-sm">0</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -646,11 +686,14 @@
                 document.getElementById('filterAll').addEventListener('click', () => this.setFilter('all'));
                 document.getElementById('filterFlock').addEventListener('click', () => this.setFilter('flock'));
                 document.getElementById('filterPolice').addEventListener('click', () => this.setFilter('police'));
+                document.getElementById('filterDrone').addEventListener('click', () => this.setFilter('drone'));
 
                 const flockDemo = document.getElementById('flockDemoButton');
                 if (flockDemo) flockDemo.addEventListener('click', () => this.injectDemo('flock'));
                 const policeDemo = document.getElementById('policeDemoButton');
                 if (policeDemo) policeDemo.addEventListener('click', () => this.injectDemo('police'));
+                const droneDemo = document.getElementById('droneDemoButton');
+                if (droneDemo) droneDemo.addEventListener('click', () => this.injectDemo('drone'));
             }
 
             setFilter(filter) {
@@ -660,7 +703,8 @@
                 const btns = {
                     all: document.getElementById('filterAll'),
                     flock: document.getElementById('filterFlock'),
-                    police: document.getElementById('filterPolice')
+                    police: document.getElementById('filterPolice'),
+                    drone: document.getElementById('filterDrone')
                 };
 
                 Object.keys(btns).forEach(k => {
@@ -669,6 +713,8 @@
                             ? 'py-1 rounded bg-pink-700 text-white font-bold transition text-center'
                             : k === 'police'
                             ? 'py-1 rounded bg-blue-700 text-white font-bold transition text-center'
+                            : k === 'drone'
+                            ? 'py-1 rounded bg-amber-600 text-white font-bold transition text-center'
                             : 'py-1 rounded bg-emerald-600 text-white font-bold transition text-center';
                     } else {
                         btns[k].className = 'py-1 rounded hover:bg-slate-800 text-slate-400 border border-transparent transition text-center';
@@ -680,7 +726,11 @@
 
             async injectDemo(kind) {
                 try {
-                    const endpoint = kind === 'police' ? '/api/police-vehicle/demo' : '/api/flock/demo';
+                    const endpoint = kind === 'police' 
+                        ? '/api/police-vehicle/demo' 
+                        : kind === 'drone'
+                        ? '/api/drone/demo'
+                        : '/api/flock/demo';
                     const response = await fetch(endpoint, { method: 'POST' });
                     const data = await response.json();
                     await this.updateSignals();
@@ -788,10 +838,15 @@
             
             async updateSignals() {
                 try {
-                    const response = await fetch('/api/signals');
-                    const data = await response.json();
+                    let data;
+                    if (window.AndroidBridge && window.AndroidBridge.getSignals) {
+                        data = JSON.parse(window.AndroidBridge.getSignals());
+                    } else {
+                        const response = await fetch('/api/signals');
+                        data = await response.json();
+                    }
                     
-                    if (data.signals) {
+                    if (data && data.signals) {
                         this.processSignals(data.signals);
                         this.updateRadarDisplay();
                         this.updateNetworkList();
@@ -803,6 +858,7 @@
 
                         if (!data.flock_detected) document.getElementById('flockAlertBanner').style.display = 'none';
                         if (!data.police_vehicle_detected) document.getElementById('policeAlertBanner').style.display = 'none';
+                        if (!data.drone_detected) document.getElementById('droneAlertBanner').style.display = 'none';
                     }
                 } catch (error) {
                     console.error('Failed to update signals:', error);
@@ -825,6 +881,7 @@
                 const networks = Array.from(this.networks.values());
                 const flockHits = networks.filter(n => n.is_flock);
                 const policeHits = networks.filter(n => n.is_police_vehicle);
+                const droneHits = networks.filter(n => n.is_drone);
 
                 const flockBanner = document.getElementById('flockAlertBanner');
                 if (flockBanner) {
@@ -849,6 +906,19 @@
                         policeBanner.style.display = 'flex';
                     } else {
                         policeBanner.style.display = 'none';
+                    }
+                }
+
+                const droneBanner = document.getElementById('droneAlertBanner');
+                if (droneBanner) {
+                    if (droneHits.length > 0) {
+                        const nearest = droneHits.slice().sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
+                        document.getElementById('droneAlertDetail').textContent =
+                            `${droneHits.length} UAS${droneHits.length > 1 ? 's' : ''} in airspace` +
+                            (nearest ? ` — Nearest: ${nearest.distance != null ? Number(nearest.distance).toFixed(1) + 'm' : 'unk'}` : '');
+                        droneBanner.style.display = 'flex';
+                    } else {
+                        droneBanner.style.display = 'none';
                     }
                 }
             }
@@ -883,6 +953,9 @@
                 const policeTag = network.is_police_vehicle
                     ? `<div class="mt-2 text-blue-400 font-bold text-[11px] p-1.5 rounded bg-blue-950/60 border border-blue-700/60">🚓 ${network.police_vehicle_type || 'Police Vehicle'} • ${network.police_confidence}</div>`
                     : '';
+                const droneTag = network.is_drone
+                    ? `<div class="mt-2 text-amber-400 font-bold text-[11px] p-1.5 rounded bg-amber-950/60 border border-amber-700/60">🛸 ${network.drone_type || 'Drone / UAS'} • ${network.drone_confidence}</div>`
+                    : '';
 
                 info.innerHTML = `
                     <div class="flex items-center justify-between border-b border-emerald-900/60 pb-1.5 mb-1.5">
@@ -892,7 +965,7 @@
                         </span>
                     </div>
                     <div class="text-[10px] text-slate-400 font-mono">${network.bssid}</div>
-                    ${flockTag}${policeTag}
+                    ${flockTag}${policeTag}${droneTag}
                     <div class="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-300">
                         <div><span class="text-slate-500">SIGNAL:</span> <span class="font-bold text-cyan-400">${network.level} dBm</span></div>
                         <div><span class="text-slate-500">DIST:</span> <span class="font-bold">${distText}</span></div>

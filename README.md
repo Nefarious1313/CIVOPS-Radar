@@ -13,6 +13,7 @@ CIVOPS-Radar is an open-source, privacy-focused alternative to commercial closed
 - 🔍 **Passive Wi-Fi Scanning** - Uses Termux:API for non-intrusive network detection
 - 🚨 **ALPR Camera Detection** - Identifies Flock Safety & surveillance cameras via OUI fingerprinting and SSID patterns
 - 🚓 **Police Vehicle Detection** - Heuristically flags police vehicle equipment (in-car routers, mobile ALPR, dispatch radios) using IEEE-verified OUIs and SSID patterns
+- 🛸 **Drone / UAV Detection** - Spots consumer, enterprise, and tactical drones plus FAA Remote ID broadcasts via IEEE-verified OUIs, SSID heuristics, and 5.8 GHz RF signatures
 - 📡 **Live Radar Visualization** - HTML5 Canvas-based circular radar display
 - 📊 **Signal Analysis** - RSSI-based distance estimation and signal strength tracking
 - 🛡️ **Risk Assessment** - Automated scoring of detected networks based on security factors
@@ -59,13 +60,27 @@ CIVOPS-Radar/
 ├── server/                 # Flask web server
 │   ├── app.py             # Main Flask application
 │   ├── flock_detector.py  # Flock Safety / ALPR detection engine
+│   ├── police_vehicle_detector.py  # Police vehicle equipment detection engine
+│   ├── drone_detector.py  # Drone / UAV / Remote ID detection engine
 │   ├── risk_engine.py     # Risk scoring algorithm
 │   ├── templates/         # HTML templates
 │   └── static/            # CSS, JS, assets
 ├── tests/                  # Automated test suite
 │   ├── test_flock_detector.py
+│   ├── test_police_vehicle_detector.py
+│   ├── test_drone_detector.py
 │   ├── test_api_flock.py
+│   ├── test_api_police_vehicle.py
+│   ├── test_api_drone.py
 │   └── test_db_migration.py
+├── android/                # Native Android APK (no Termux required)
+│   ├── app/src/main/java/io/synthetic/civopsradar/
+│   │   ├── WifiRadarScanner.java
+│   │   ├── FlockDetector.java
+│   │   ├── PoliceVehicleDetector.java
+│   │   ├── DroneDetector.java
+│   │   └── RiskEngine.java
+│   └── README.md
 ├── native/                # Future Kotlin Android app
 ├── data/                  # Local data storage
 │   ├── scans.db          # SQLite database
@@ -123,17 +138,31 @@ CIVOPS-Radar/
 - UI: blue radar dots, alert banner, filter button, and statistics counter
 - See `docs/TECH.md` for the detection model and known limitations
 
+### 7. drone-detector
+- Passive identification of drones / UAVs / UAS, including FAA Part 89 Remote ID broadcast nodes
+- 30 IEEE-verified hardware OUIs (DJI, DJI Baiwang, Skydio, Parrot, Teal, AeroVironment, GoPro, XAG, Powervision, Espressif FPV modules)
+- SSID heuristics for DJI / Skydio / Autel / Parrot / Teal / Yuneec fleet signatures, OpenDroneID, and FPV links (ExpressLRS, SpeedyBee, Betaflight, iNav)
+- RF hints: 5.8 GHz U-NII-3 video-downlink boost, Wi-Fi Direct (P2P) link detection
+- Consumer-WPS penalty suppresses handheld gimbals and shared-chipset home routers
+- Confidence scoring: `CONFIRMED` / `HIGH` / `MEDIUM` / `LOW` / `NONE` (alert threshold 60)
+- API endpoints: `GET /api/drone/status`, `GET|POST /api/drone/demo`
+- UI: amber radar dots, alert banner, filter button, and statistics counter
+- Android: mirrored natively in `android/.../DroneDetector.java` (no Python required)
+- See `docs/TECH.md` for the detection model and known limitations
+
 ## Database Migration
 
-If you have an existing `scans.db` created before the Flock detection feature was added,
+If you have an existing `scans.db` created before the detection features were added,
 the server **automatically migrates** the schema on startup — no manual steps are needed.
-Three new columns are added to the `scans` table:
+The `scans` table gains one column group per detector:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `is_flock` | BOOLEAN | `1` if identified as a Flock Safety or ALPR device |
-| `flock_type` | TEXT | Human-readable device classification |
-| `alpr_confidence` | TEXT | Detection confidence tier |
+| Detector | Columns | Description |
+|----------|---------|-------------|
+| Flock / ALPR | `is_flock`, `flock_type`, `alpr_confidence` | Flock Safety camera flag, classification, confidence tier |
+| Police vehicle | `is_police_vehicle`, `police_vehicle_type`, `police_confidence` | Police equipment flag, classification, confidence tier |
+| Drone / UAV | `is_drone`, `drone_type`, `drone_confidence` | Drone flag, classification, confidence tier |
+
+Existing rows are preserved and retroactively re-analysed by each detector on server start.
 
 ## Development
 
@@ -146,7 +175,7 @@ Three new columns are added to the `scans` table:
 
 ### Testing
 ```bash
-# Run all unit tests (including new Flock detection and DB migration tests)
+# Run all unit tests (Flock, police-vehicle, drone detectors + API + DB migration)
 python3 -m unittest discover -s tests
 ```
 
@@ -165,6 +194,7 @@ MIT License - See [LICENSE](LICENSE) file for details.
 ## Support
 
 - 📖 Documentation: [docs/](docs/)
+- 📱 Android APK: [android/README.md](android/README.md)
 - 🐛 Issues: [GitHub Issues](https://github.com/synthetic-io/CIVOPS-Radar/issues)
 - 💬 Discussions: [GitHub Discussions](https://github.com/synthetic-io/CIVOPS-Radar/discussions)
 

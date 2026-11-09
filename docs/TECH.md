@@ -19,6 +19,14 @@ CIVOPS-Radar is built as a modular, offline-first Wi-Fi scanning and visualizati
 └──────────────┘  └──────────┘ └──────────┘ └────────────┘  └────────────┘
 ```
 
+Detection engines (all passive, OUI + SSID heuristics):
+
+| Engine | Module | Flags |
+|--------|--------|-------|
+| Flock / ALPR | `server/flock_detector.py` | `is_flock`, `flock_type`, `alpr_confidence` |
+| Police vehicle | `server/police_vehicle_detector.py` | `is_police_vehicle`, `police_vehicle_type`, `police_confidence` |
+| Drone / UAV | `server/drone_detector.py` | `is_drone`, `drone_type`, `drone_confidence` |
+
 ## Core Components
 
 ### 1. Termux Scanner (`termux/radar_prototype.sh`)
@@ -61,6 +69,9 @@ CIVOPS-Radar is built as a modular, offline-first Wi-Fi scanning and visualizati
 **API Endpoints**:
 - `GET /api/signals` - Latest scan results
 - `GET /api/statistics` - Scan statistics
+- `GET /api/flock/status` / `GET|POST /api/flock/demo` - Flock camera status / demo data
+- `GET /api/police-vehicle/status` / `GET|POST /api/police-vehicle/demo` - Police vehicle status / demo data
+- `GET /api/drone/status` / `GET|POST /api/drone/demo` - Drone / UAV status / demo data
 - `GET /api/export/<format>` - Data export
 - `GET /api/network/<bssid>` - Network details
 - `POST /api/scan/start` - Start scanning
@@ -231,6 +242,69 @@ Returns a `PoliceVehicleDetection` dataclass with fields: `is_police_vehicle`, `
 
 ---
 
+### 7. Drone Detector (`server/drone_detector.py`)
+
+**Purpose**: Passively identify unmanned aerial vehicles (drones / UAVs / UAS), aerial
+surveillance platforms, and FAA Part 89 Remote ID broadcast nodes from Wi-Fi scan data.
+
+**Why heuristic**: most drones never broadcast an identifiable Wi-Fi SSID — DJI OcuSync /
+Lightbridge links stay hidden, and proprietary control links do not appear in
+`termux-wifi-scaninfo` at all. Detection therefore combines hardware OUIs, SSID naming
+conventions, Remote ID signatures, and RF band characteristics.
+
+**Detection Methods**:
+
+| Method | Indicator | Confidence Score |
+|--------|-----------|-----------------|
+| FAA Remote ID SSID | `RID-<20 digits>`, `UAS-<hex>`, `OpenDroneID-*` | 88–95 → CONFIRMED |
+| SSID pattern (DJI fleet) | `DJI-Mavic*`, `DJI-Matrice*`, `DJI-Phantom*`, `DJI-Inspire*`, `DJI-Avata*`, `DJI-Mini*` | 86–92 → HIGH/CONFIRMED |
+| SSID pattern (tactical) | `Skydio-X2/X10`, `Anafi-USA`, `Teal-Golden-Eagle` | 88–92 → HIGH/CONFIRMED |
+| SSID pattern (enterprise) | `Autel-EVO*`, `DJI-Matrice*`, `Yuneec-Typhoon*` | 84–90 → HIGH |
+| SSID pattern (FPV links) | `ExpressLRS-*`, `SpeedyBee-*`, `Betaflight-*`, `iNav-*` | 78–80 → HIGH |
+| Vendor OUI + drone SSID | verified drone-hardware OUI combined with any drone SSID | 96 → CONFIRMED |
+| Vendor OUI alone | verified drone OUI, hidden/generic SSID | 40–65 → LOW (not flagged) |
+| 5.8 GHz RF hint | OUI/SSID match on ≥ 5725 MHz (U-NII-3 video downlink) | +5 |
+| Wi-Fi Direct hint | `[P2P]` capability or `DIRECT-` SSID on a drone OUI | +8 |
+| WPS penalty | consumer WPS enabled without a drone SSID | −35 |
+
+**Vendor OUI sources**: all 30 prefixes in `DRONE_OUIS` were verified against the IEEE MA-L
+registry (`https://standards-oui.ieee.org/oui/oui.csv`) on 2026-11-09. Categories: DJI
+(SZ DJI Technology + DJI Baiwang enterprise), DJI Ronin/Osmo handhelds (kept at LOW),
+Skydio, Parrot, Teal Drones, AeroVironment, GoPro Karma, XAG, Powervision, and Espressif
+ESP32 FPV modules. Autel Robotics and Yuneec have no verified MA-L prefix and are matched
+on SSID evidence only.
+
+**Confidence Tiers**:
+
+| Tier | Score Range | Meaning |
+|------|------------|---------|
+| `CONFIRMED` | ≥ 95 | Near-certain identification (dual verification or Remote ID) |
+| `HIGH` | ≥ 80 | Strong evidence — alerts |
+| `MEDIUM` | ≥ 60 | Actionable suspicion — alerts |
+| `LOW` | > 0 | Weak signal (OUI only), recorded but not flagged |
+| `NONE` | 0 | No evidence found |
+
+**Known limitations**:
+- High false-negative rate: most drones broadcast nothing identifiable; a clean scan does
+  NOT prove the airspace is empty.
+- Possible false positives: DJI Ronin/Osmo handheld gimbals share DJI radio hardware, and
+  ESP32 modules appear in non-drone devices — both stay at LOW unless corroborated.
+- OUI identifies the chipset maker, not the deployment. Treat MEDIUM and above as
+  actionable, LOW as informational only.
+
+**Key Class**: `DroneDetector.analyze(bssid, ssid, capabilities, level, frequency)`
+Returns a `DroneDetection` dataclass with fields: `is_drone`, `confidence`,
+`confidence_score`, `device_type`, `vendor`, `indicators`, `reasons`.
+
+**API Endpoints**:
+- `GET /api/drone/status` — current detection status and drone list
+- `GET|POST /api/drone/demo` — inject demo drones for UI testing
+
+**Android mirror**: `android/app/src/main/java/io/synthetic/civopsradar/DroneDetector.java`
+implements the same model natively (no Python required).
+
+---
+
 ## Database Schema
 
 ### Scans Table
@@ -256,7 +330,10 @@ CREATE TABLE scans (
     alpr_confidence TEXT DEFAULT '', -- Detection confidence tier
     is_police_vehicle BOOLEAN DEFAULT 0, -- Police / law-enforcement vehicle flag
     police_vehicle_type TEXT DEFAULT '', -- Human-readable vehicle classification
-    police_confidence TEXT DEFAULT ''   -- Detection confidence tier
+    police_confidence TEXT DEFAULT '',   -- Detection confidence tier
+    is_drone BOOLEAN DEFAULT 0,          -- Drone / UAV flag
+    drone_type TEXT DEFAULT '',          -- Human-readable drone classification
+    drone_confidence TEXT DEFAULT ''     -- Detection confidence tier
 );
 ```
 
@@ -267,11 +344,13 @@ CREATE INDEX idx_timestamp ON scans(timestamp);
 CREATE INDEX idx_level ON scans(level);
 CREATE INDEX idx_flock ON scans(is_flock);
 CREATE INDEX idx_police_vehicle ON scans(is_police_vehicle);
+CREATE INDEX idx_drone ON scans(is_drone);
 ```
 
-> **Automatic Migration**: If `scans.db` was created before the Flock detection feature,
-> the server adds the Flock columns automatically on startup using `ALTER TABLE`. The same
-> mechanism adds the police-vehicle columns for older databases. Existing data is preserved.
+> **Automatic Migration**: If `scans.db` was created before the detection features,
+> the server adds the missing columns automatically on startup using `ALTER TABLE`, one
+> group per detector (Flock, police vehicle, drone). Existing data is preserved and
+> retroactively re-analysed by each detector on server start.
 
 ## Signal Processing
 
@@ -397,7 +476,7 @@ tail -f /sdcard/radar/scan.log
 - Multi-device synchronization
 - Advanced threat detection
 - Machine learning analysis
-- Mobile app (Kotlin)
+- Standalone Kotlin app (the Java WebView APK in `android/` already ships)
 
 ### Technical Roadmap
 - **v2.0**: GPS mapping and trilateration

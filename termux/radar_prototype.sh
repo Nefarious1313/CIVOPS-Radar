@@ -89,7 +89,10 @@ CREATE TABLE IF NOT EXISTS scans (
     alpr_confidence TEXT DEFAULT '',
     is_police_vehicle BOOLEAN DEFAULT 0,
     police_vehicle_type TEXT DEFAULT '',
-    police_confidence TEXT DEFAULT ''
+    police_confidence TEXT DEFAULT '',
+    is_drone BOOLEAN DEFAULT 0,
+    drone_type TEXT DEFAULT '',
+    drone_confidence TEXT DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_bssid ON scans(bssid);
@@ -104,8 +107,12 @@ EOF
     sqlite3 "$DB_PATH" "ALTER TABLE scans ADD COLUMN is_police_vehicle BOOLEAN DEFAULT 0;" 2>/dev/null || true
     sqlite3 "$DB_PATH" "ALTER TABLE scans ADD COLUMN police_vehicle_type TEXT DEFAULT '';" 2>/dev/null || true
     sqlite3 "$DB_PATH" "ALTER TABLE scans ADD COLUMN police_confidence TEXT DEFAULT '';" 2>/dev/null || true
+    sqlite3 "$DB_PATH" "ALTER TABLE scans ADD COLUMN is_drone BOOLEAN DEFAULT 0;" 2>/dev/null || true
+    sqlite3 "$DB_PATH" "ALTER TABLE scans ADD COLUMN drone_type TEXT DEFAULT '';" 2>/dev/null || true
+    sqlite3 "$DB_PATH" "ALTER TABLE scans ADD COLUMN drone_confidence TEXT DEFAULT '';" 2>/dev/null || true
     sqlite3 "$DB_PATH" "CREATE INDEX IF NOT EXISTS idx_flock ON scans(is_flock);" 2>/dev/null || true
     sqlite3 "$DB_PATH" "CREATE INDEX IF NOT EXISTS idx_police_vehicle ON scans(is_police_vehicle);" 2>/dev/null || true
+    sqlite3 "$DB_PATH" "CREATE INDEX IF NOT EXISTS idx_drone ON scans(is_drone);" 2>/dev/null || true
     sqlite3 "$DB_PATH" "DROP VIEW IF EXISTS latest_scans;" 2>/dev/null || true
 
     sqlite3 "$DB_PATH" << 'EOF'
@@ -130,7 +137,10 @@ SELECT
     alpr_confidence,
     is_police_vehicle,
     police_vehicle_type,
-    police_confidence
+    police_confidence,
+    is_drone,
+    drone_type,
+    drone_confidence
 FROM scans s1
 WHERE timestamp = (
     SELECT MAX(timestamp) 
@@ -171,15 +181,17 @@ from datetime import datetime
 RADAR_DIR = '''$RADAR_DIR'''
 DB_PATH = '''$DB_PATH'''
 
-# Try importing RiskEngine and FlockDetector if available
+# Try importing RiskEngine, FlockDetector, PoliceVehicleDetector, and DroneDetector if available
 risk_engine = None
 flock_detector = None
 police_vehicle_detector = None
+drone_detector = None
 try:
     sys.path.insert(0, os.path.join(RADAR_DIR, 'server'))
     from risk_engine import RiskEngine, NetworkProfile
     from flock_detector import detector as flock_detector
     from police_vehicle_detector import detector as police_vehicle_detector
+    from drone_detector import detector as drone_detector
     risk_engine = RiskEngine()
 except Exception:
     pass
@@ -325,6 +337,23 @@ def process_scan_data():
                 except Exception:
                     pass
 
+            is_drone = 0
+            drone_type = ''
+            drone_confidence = 'NONE'
+            if drone_detector:
+                try:
+                    d_info = drone_detector.analyze(bssid, ssid, capabilities, level, frequency)
+                    if d_info.confidence_score > 0:
+                        drone_confidence = d_info.confidence
+                    if d_info.is_drone:
+                        is_drone = 1
+                        drone_type = d_info.device_type
+                        if vendor == 'Unknown':
+                            vendor = d_info.vendor
+                        print(f'🛸 [ALERT] Drone / UAV Detected: {ssid or \"Hidden\"} ({bssid}) - {drone_type} [Confidence: {drone_confidence}]')
+                except Exception:
+                    pass
+
             cursor.execute('SELECT id, scan_count FROM scans WHERE bssid = ? ORDER BY timestamp DESC LIMIT 1', (bssid,))
             existing = cursor.fetchone()
             
@@ -335,24 +364,28 @@ def process_scan_data():
                         level = ?, distance = ?, risk_score = ?, is_hidden = ?, 
                         is_open = ?, vendor = ?, last_seen = ?, scan_count = scan_count + 1,
                         is_flock = ?, flock_type = ?, alpr_confidence = ?,
-                        is_police_vehicle = ?, police_vehicle_type = ?, police_confidence = ?
+                        is_police_vehicle = ?, police_vehicle_type = ?, police_confidence = ?,
+                        is_drone = ?, drone_type = ?, drone_confidence = ?
                     WHERE bssid = ?
                 ''', (current_time, ssid, capabilities, frequency, level, distance, 
                       risk_score, is_hidden, is_open, vendor, current_time, 
                       is_flock, flock_type, alpr_confidence,
-                      is_police_vehicle, police_vehicle_type, police_confidence, bssid))
+                      is_police_vehicle, police_vehicle_type, police_confidence,
+                      is_drone, drone_type, drone_confidence, bssid))
             else:
                 cursor.execute('''
                     INSERT INTO scans (bssid, ssid, capabilities, frequency, level, 
                                     distance, risk_score, is_hidden, is_open, 
                                     vendor, first_seen, last_seen, scan_count,
                                     is_flock, flock_type, alpr_confidence,
-                                    is_police_vehicle, police_vehicle_type, police_confidence)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                                    is_police_vehicle, police_vehicle_type, police_confidence,
+                                    is_drone, drone_type, drone_confidence)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (bssid, ssid, capabilities, frequency, level, distance, 
                       risk_score, is_hidden, is_open, vendor, current_time, current_time,
                       is_flock, flock_type, alpr_confidence,
-                      is_police_vehicle, police_vehicle_type, police_confidence))
+                      is_police_vehicle, police_vehicle_type, police_confidence,
+                      is_drone, drone_type, drone_confidence))
         
         conn.commit()
         print(f'Processed {len(scan_data)} networks')
@@ -391,6 +424,7 @@ show_stats() {
     high_risk_networks=$(sqlite3 -batch -noheader "$DB_PATH" "SELECT COUNT(*) FROM latest_scans WHERE risk_score > 50;")
     flock_cameras=$(sqlite3 -batch -noheader "$DB_PATH" "SELECT COUNT(*) FROM latest_scans WHERE is_flock = 1;")
     police_vehicles=$(sqlite3 -batch -noheader "$DB_PATH" "SELECT COUNT(*) FROM latest_scans WHERE is_police_vehicle = 1;")
+    drones=$(sqlite3 -batch -noheader "$DB_PATH" "SELECT COUNT(*) FROM latest_scans WHERE is_drone = 1;")
     
     log "${GREEN}=== Scan Statistics ===${NC}"
     log "Total networks discovered: $total_networks"
@@ -405,6 +439,11 @@ show_stats() {
         log "${RED}🚓 Police Vehicles Detected: $police_vehicles${NC}"
     else
         log "${GREEN}Police Vehicles: 0 (No police vehicle equipment in range)${NC}"
+    fi
+    if [ "$drones" -gt 0 ]; then
+        log "${YELLOW}🛸 Drones / UAVs Detected: $drones${NC}"
+    else
+        log "${GREEN}Drones / UAVs: 0 (No aerial surveillance in range)${NC}"
     fi
 }
 

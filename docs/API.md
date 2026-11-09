@@ -48,6 +48,9 @@ Currently, no authentication is required. All endpoints are accessible locally. 
       "is_police_vehicle": false,
       "police_vehicle_type": "",
       "police_confidence": "NONE",
+      "is_drone": false,
+      "drone_type": "",
+      "drone_confidence": "NONE",
       "position": {
         "x": 0.3,
         "y": 0.4,
@@ -57,6 +60,8 @@ Currently, no authentication is required. All endpoints are accessible locally. 
     }
   ],
   "flock_detected": false,
+  "police_vehicle_detected": false,
+  "drone_detected": false,
   "timestamp": "2024-01-15T10:30:00"
 }
 ```
@@ -81,7 +86,8 @@ Currently, no authentication is required. All endpoints are accessible locally. 
   "hidden_networks": 2,
   "flock_cameras": 2,
   "alpr_cameras": 3,
-  "police_vehicles": 1
+  "police_vehicles": 1,
+  "drones": 1
 }
 ```
 
@@ -207,7 +213,65 @@ Currently, no authentication is required. All endpoints are accessible locally. 
 
 ---
 
-### 7. Export Scan Data
+### 7. Get Drone / UAV Status
+
+**Endpoint**: `GET /api/drone/status`
+
+**Description**: Returns the current drone / unmanned aerial vehicle detection status based on the latest scan data.
+
+**Response**:
+```json
+{
+  "status": "alert",
+  "drone_detected": true,
+  "drone_count": 2,
+  "nearest_drone": {
+    "bssid": "60:60:1f:33:44:55",
+    "ssid": "DJI-Matrice300-RTK",
+    "drone_type": "DJI Matrice Enterprise Drone",
+    "drone_confidence": "CONFIRMED",
+    "distance": 8.5,
+    "is_drone": true
+  },
+  "drones": [ "...array of scan objects..." ],
+  "timestamp": "2026-11-09T04:20:00"
+}
+```
+
+**`status` field values**:
+- `"alert"` — one or more drones / UAVs detected
+- `"clear"` — no drone activity found
+
+**Status Codes**:
+- `200`: Success
+- `500`: Internal server error
+
+---
+
+### 8. Inject Drone Demo Data
+
+**Endpoint**: `GET /api/drone/demo` or `POST /api/drone/demo`
+
+**Description**: Injects three realistic demo drone / UAV entries (DJI Matrice, Skydio X2, FAA Remote ID broadcast) into the database for UI testing and demonstration.
+
+> ⚠️ **Warning**: This writes to the live `scans.db`. Use for testing/demo purposes only.
+
+**Response**:
+```json
+{
+  "status": "demo_drones_injected",
+  "count": 3,
+  "message": "Sample drone/UAV surveillance injected into database for testing"
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `500`: Internal server error
+
+---
+
+### 9. Export Scan Data
 
 **Endpoint**: `GET /api/export/<format>`
 
@@ -232,7 +296,7 @@ Content-Type: application/json
 Content-Disposition: attachment; filename="radar_export_20240115_103000.json"
 ```
 
-### 4. Get Network Details
+### 10. Get Network Details
 
 **Endpoint**: `GET /api/network/<bssid>`
 
@@ -281,7 +345,7 @@ Content-Disposition: attachment; filename="radar_export_20240115_103000.json"
 - `404`: Network not found
 - `500`: Internal server error
 
-### 5. Start Scanning
+### 11. Start Scanning
 
 **Endpoint**: `POST /api/scan/start`
 
@@ -299,7 +363,7 @@ Content-Disposition: attachment; filename="radar_export_20240115_103000.json"
 - `200`: Success
 - `500`: Internal server error
 
-### 6. Stop Scanning
+### 12. Stop Scanning
 
 **Endpoint**: `POST /api/scan/stop`
 
@@ -341,6 +405,9 @@ interface NetworkSignal {
   is_police_vehicle: boolean;    // True if identified as police / law-enforcement vehicle equipment
   police_vehicle_type: string;   // Human-readable vehicle classification (empty if not police)
   police_confidence: string;     // Detection confidence: CONFIRMED | HIGH | MEDIUM | LOW | NONE
+  is_drone: boolean;             // True if identified as a drone / UAV / Remote ID broadcast
+  drone_type: string;            // Human-readable drone classification (empty if not a drone)
+  drone_confidence: string;      // Detection confidence: CONFIRMED | HIGH | MEDIUM | LOW | NONE
   position: {              // Radar position
     x: number;             // X coordinate (-1 to 1)
     y: number;             // Y coordinate (-1 to 1)
@@ -379,6 +446,7 @@ interface ScanStatistics {
   flock_cameras: number;      // Flock Safety ALPR cameras detected
   alpr_cameras: number;       // All ALPR cameras (Flock + other manufacturers)
   police_vehicles: number;    // Police / law-enforcement vehicles detected
+  drones: number;             // Drones / UAVs detected
 }
 ```
 

@@ -34,6 +34,13 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from police_vehicle_detector import detector as police_vehicle_detector
 
+try:
+    from drone_detector import detector as drone_detector
+except ImportError:
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from drone_detector import detector as drone_detector
+
 # Configuration
 RADAR_DIR = os.environ.get("RADAR_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(RADAR_DIR, "data", "scans.db")
@@ -84,7 +91,10 @@ class RadarData:
                 alpr_confidence TEXT DEFAULT '',
                 is_police_vehicle BOOLEAN DEFAULT 0,
                 police_vehicle_type TEXT DEFAULT '',
-                police_confidence TEXT DEFAULT ''
+                police_confidence TEXT DEFAULT '',
+                is_drone BOOLEAN DEFAULT 0,
+                drone_type TEXT DEFAULT '',
+                drone_confidence TEXT DEFAULT ''
             )
         ''')
         
@@ -95,14 +105,17 @@ class RadarData:
             CREATE INDEX IF NOT EXISTS idx_timestamp ON scans(timestamp)
         ''')
         
-        # Ensure Flock / police-vehicle columns exist for older databases
+        # Ensure Flock / police-vehicle / drone columns exist for older databases
         for col_def in [
             "is_flock BOOLEAN DEFAULT 0",
             "flock_type TEXT DEFAULT ''",
             "alpr_confidence TEXT DEFAULT ''",
             "is_police_vehicle BOOLEAN DEFAULT 0",
             "police_vehicle_type TEXT DEFAULT ''",
-            "police_confidence TEXT DEFAULT ''"
+            "police_confidence TEXT DEFAULT ''",
+            "is_drone BOOLEAN DEFAULT 0",
+            "drone_type TEXT DEFAULT ''",
+            "drone_confidence TEXT DEFAULT ''"
         ]:
             try:
                 cursor.execute(f"ALTER TABLE scans ADD COLUMN {col_def}")
@@ -111,6 +124,7 @@ class RadarData:
                 
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_flock ON scans(is_flock)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_police_vehicle ON scans(is_police_vehicle)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_drone ON scans(is_drone)")
         
         conn.commit()
         conn.close()
@@ -125,13 +139,14 @@ class RadarData:
                 bssid, ssid, capabilities, frequency, level, distance, 
                 risk_score, is_hidden, is_open, vendor, first_seen, last_seen,
                 scan_count, timestamp, is_flock, flock_type, alpr_confidence,
-                is_police_vehicle, police_vehicle_type, police_confidence
+                is_police_vehicle, police_vehicle_type, police_confidence,
+                is_drone, drone_type, drone_confidence
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY bssid ORDER BY timestamp DESC, id DESC) as rn
                 FROM scans
             )
             WHERE rn = 1
-            ORDER BY is_police_vehicle DESC, is_flock DESC, timestamp DESC
+            ORDER BY is_drone DESC, is_police_vehicle DESC, is_flock DESC, timestamp DESC
             LIMIT ?
         '''
         
@@ -172,6 +187,23 @@ class RadarData:
                         item['police_vehicle_type'] = p_res.device_type
                         if item.get('vendor') in ['Unknown', None, '']:
                             item['vendor'] = p_res.vendor
+
+            # Retroactive drone check for rows saved before this detector existed
+            if not item.get('is_drone'):
+                d_res = drone_detector.analyze(
+                    item.get('bssid'),
+                    item.get('ssid'),
+                    item.get('capabilities'),
+                    item.get('level'),
+                    item.get('frequency')
+                )
+                if d_res.confidence_score > 0:
+                    item['drone_confidence'] = d_res.confidence
+                    if d_res.is_drone:
+                        item['is_drone'] = 1
+                        item['drone_type'] = d_res.device_type
+                        if item.get('vendor') in ['Unknown', None, '']:
+                            item['vendor'] = d_res.vendor
         
         conn.close()
         return results
@@ -213,6 +245,10 @@ class RadarData:
         # Police / law-enforcement vehicles
         cursor.execute("SELECT COUNT(DISTINCT bssid) FROM scans WHERE is_police_vehicle = 1")
         stats['police_vehicles'] = cursor.fetchone()[0] or 0
+
+        # Drones / Unmanned Aerial Systems (UAS)
+        cursor.execute("SELECT COUNT(DISTINCT bssid) FROM scans WHERE is_drone = 1")
+        stats['drones'] = cursor.fetchone()[0] or 0
         
         conn.close()
         return stats
@@ -355,18 +391,23 @@ def get_signals():
                 'is_police_vehicle': bool(scan.get('is_police_vehicle')),
                 'police_vehicle_type': scan.get('police_vehicle_type') or '',
                 'police_confidence': scan.get('police_confidence') or 'NONE',
+                'is_drone': bool(scan.get('is_drone')),
+                'drone_type': scan.get('drone_type') or '',
+                'drone_confidence': scan.get('drone_confidence') or 'NONE',
                 'position': position
             }
             radar_signals.append(signal)
         
-        # Check if any Flock cameras or police vehicles are active
+        # Check if any Flock cameras, police vehicles, or drones are active
         flock_found = any(s['is_flock'] for s in radar_signals)
         police_found = any(s['is_police_vehicle'] for s in radar_signals)
+        drone_found = any(s['is_drone'] for s in radar_signals)
         
         return jsonify({
             'signals': radar_signals,
             'flock_detected': flock_found,
             'police_vehicle_detected': police_found,
+            'drone_detected': drone_found,
             'timestamp': datetime.now().isoformat()
         })
     
@@ -531,6 +572,7 @@ def inject_police_vehicle_demo():
         ]
 
         for vehicle in demo_vehicles:
+            cursor.execute('DELETE FROM scans WHERE bssid = ?', (vehicle[0],))
             cursor.execute('''
                 INSERT INTO scans (
                     bssid, ssid, capabilities, frequency, level, distance,
@@ -546,6 +588,77 @@ def inject_police_vehicle_demo():
             'status': 'demo_vehicles_injected',
             'count': len(demo_vehicles),
             'message': 'Sample police-vehicle equipment injected into database for testing'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/drone/status')
+def get_drone_status():
+    """Get active drone / UAV reconnaissance status"""
+    try:
+        scans = radar_data.get_latest_scans(limit=100)
+        drones = [s for s in scans if s.get('is_drone')]
+
+        # Sort by distance (closest first)
+        drones.sort(key=lambda s: s.get('distance') or 999.0)
+
+        return jsonify({
+            'status': 'alert' if drones else 'clear',
+            'drone_detected': len(drones) > 0,
+            'drone_count': len(drones),
+            'nearest_drone': drones[0] if drones else None,
+            'drones': drones,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/drone/demo', methods=['POST', 'GET'])
+def inject_drone_demo():
+    """Inject realistic demo drone / UAV equipment for testing and validation"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        current_time = datetime.now().isoformat()
+
+        demo_drones = [
+            (
+                "60:60:1f:33:44:55", "DJI-Matrice300-RTK", "[WPA2-PSK-CCMP][ESS]",
+                5785, -55, 8.5, 95, 0, 0, "DJI Innovations",
+                current_time, current_time, 18, 1,
+                "DJI Matrice Enterprise Drone", "CONFIRMED"
+            ),
+            (
+                "00:26:7e:99:88:77", "Skydio-X2-Recon", "[WPA2-PSK-CCMP][ESS][P2P]",
+                5805, -63, 14.2, 92, 0, 0, "Skydio Inc.",
+                current_time, current_time, 11, 1,
+                "Skydio Autonomous Recon Drone", "CONFIRMED"
+            ),
+            (
+                "fa:0b:bc:12:34:56", "RID-15962804291849182910", "[ESS]",
+                2437, -68, 22.0, 95, 0, 1, "FAA / ASD-STAN Remote ID",
+                current_time, current_time, 7, 1,
+                "FAA Remote ID Drone Broadcast", "CONFIRMED"
+            ),
+        ]
+
+        for drone in demo_drones:
+            cursor.execute('DELETE FROM scans WHERE bssid = ?', (drone[0],))
+            cursor.execute('''
+                INSERT INTO scans (
+                    bssid, ssid, capabilities, frequency, level, distance,
+                    risk_score, is_hidden, is_open, vendor, first_seen,
+                    last_seen, scan_count, is_drone,
+                    drone_type, drone_confidence
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', drone)
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'status': 'demo_drones_injected',
+            'count': len(demo_drones),
+            'message': 'Sample drone/UAV surveillance injected into database for testing'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

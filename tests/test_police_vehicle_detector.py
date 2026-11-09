@@ -154,5 +154,37 @@ class TestPoliceVehicleDetector(unittest.TestCase):
         self.assertGreater(len(POLICE_SSID_PATTERNS), 0)
 
 
+    def test_axon_fleet_ssid_is_high(self):
+        """SSID matching Axon Fleet in-car video should flag at HIGH confidence."""
+        res = self.detector.analyze(bssid="aa:bb:cc:dd:ee:ff", ssid="AxonFleet-3810")
+        self.assertTrue(res.is_police_vehicle)
+        self.assertGreaterEqual(res.confidence_score, 80)
+        self.assertIn("Axon Fleet", res.device_type)
+
+    def test_axon_oui_plus_mfp_boost(self):
+        """Axon Enterprise OUI with hidden SSID and MFP capabilities should receive MFP boost."""
+        res = self.detector.analyze(
+            bssid="00:25:df:11:22:33",
+            ssid="",
+            capabilities="[WPA2-EAP-CCMP][RSN-EAP-CCMP][ESS][MFPC]",
+        )
+        self.assertTrue(res.is_police_vehicle)
+        self.assertIn("mfp", res.indicators)
+        self.assertTrue(any("Protected Management Frames" in r for r in res.reasons))
+
+    def test_wps_penalty_reduces_false_positives(self):
+        """OUI match with consumer WPS enabled should be penalized to avoid false positives."""
+        res = self.detector.analyze(
+            bssid="00:30:44:aa:bb:cc",
+            ssid="",
+            capabilities="[WPA2-PSK-CCMP][ESS][WPS]",
+        )
+        # Without WPS, hidden CradlePoint OUI would score 70 (MEDIUM).
+        # With WPS, score is penalized by 30 to 40 (LOW), revoking is_police_vehicle flag.
+        self.assertFalse(res.is_police_vehicle)
+        self.assertEqual(res.confidence, "LOW")
+        self.assertTrue(any("Consumer WPS" in r for r in res.reasons))
+
+
 if __name__ == '__main__':
     unittest.main()

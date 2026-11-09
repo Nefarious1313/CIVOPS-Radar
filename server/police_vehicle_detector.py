@@ -282,6 +282,75 @@ POLICE_VEHICLE_OUIS: Dict[str, Dict[str, Any]] = {
         "device_type": "Suspected FirstNet / Public-Safety Hotspot",
     },
 
+# --- In-Car Video & Bodycam Offload (Axon, WatchGuard) ---
+    "00:25:df": {
+        "vendor": "Axon Enterprise, Inc.",
+        "category": "alpr",
+        "description": "Axon Fleet in-car video / bodycam dock",
+        "base_confidence": 48,
+        "device_type": "Police Video / Axon Fleet Unit",
+    },
+    "00:1d:96": {
+        "vendor": "WatchGuard Video",
+        "category": "alpr",
+        "description": "WatchGuard 4RE / V300 police in-car video system",
+        "base_confidence": 48,
+        "device_type": "Police In-Car Video System (WatchGuard)",
+    },
+
+    # --- Modern Rugged MDT Hardware (Panasonic Connect) ---
+    "b8:20:8e": {
+        "vendor": "Panasonic Connect Co., Ltd.",
+        "category": "mdt",
+        "description": "Panasonic Toughbook in-vehicle MDT",
+        "base_confidence": 42,
+        "device_type": "Police Mobile Data Terminal (Toughbook)",
+    },
+    "4c:36:4e": {
+        "vendor": "Panasonic Connect Co., Ltd.",
+        "category": "mdt",
+        "description": "Panasonic Toughbook in-vehicle MDT",
+        "base_confidence": 42,
+        "device_type": "Police Mobile Data Terminal (Toughbook)",
+    },
+    "bc:3e:0b": {
+        "vendor": "Panasonic Connect Co., Ltd.",
+        "category": "mdt",
+        "description": "Panasonic Toughbook in-vehicle MDT",
+        "base_confidence": 42,
+        "device_type": "Police Mobile Data Terminal (Toughbook)",
+    },
+
+    # --- Mobile Industrial / Emergency Vehicle Routers (Peplink) ---
+    "00:11:6e": {
+        "vendor": "Peplink International Ltd.",
+        "category": "router",
+        "description": "Peplink MAX BR1 / Transit in-vehicle mobile router",
+        "base_confidence": 40,
+        "device_type": "Police In-Car Router / Mobile Gateway",
+    },
+    "10:56:ca": {
+        "vendor": "Peplink International Ltd.",
+        "category": "router",
+        "description": "Peplink MAX BR1 / Transit in-vehicle mobile router",
+        "base_confidence": 40,
+        "device_type": "Police In-Car Router / Mobile Gateway",
+    },
+    "6c:a3:d3": {
+        "vendor": "Peplink International Ltd.",
+        "category": "router",
+        "description": "Peplink MAX BR1 / Transit in-vehicle mobile router",
+        "base_confidence": 40,
+        "device_type": "Police In-Car Router / Mobile Gateway",
+    },
+    "d4:13:f8": {
+        "vendor": "Peplink International Ltd.",
+        "category": "router",
+        "description": "Peplink MAX BR1 / Transit in-vehicle mobile router",
+        "base_confidence": 40,
+        "device_type": "Police In-Car Router / Mobile Gateway",
+    },
+
     # --- Dispatch / two-way radio equipment ---
     "00:04:7d": {
         "vendor": "Motorola Solutions Inc.",
@@ -418,6 +487,29 @@ POLICE_SSID_PATTERNS: List[Tuple[str, str, str, int, str]] = [
     (r'(?i)\bfirstnet\b', "SSID references FirstNet (AT&T public-safety network)",
      "FirstNet / Public-Safety Device", 72, "equipment"),
 
+# --- Police fleet in-car video, CAD, and router default signatures (MEDIUM-HIGH) ---
+    (r'(?i)\b(axonfleet|axon[\s_-]+fleet|axon[\s_-]+dock)\b',
+     "SSID matches Axon Fleet in-car video system",
+     "Police Video / Axon Fleet Unit", 86, "equipment"),
+    (r'(?i)\b(watchguard|wgv[\s_-]+)',
+     "SSID matches WatchGuard Video police in-car camera",
+     "Police In-Car Video System (WatchGuard)", 86, "equipment"),
+    (r'(?i)\b(ibr\d{3,4}|cradlepoint[\s_-]+ibr)\b',
+     "SSID matches CradlePoint IBR police in-vehicle router series",
+     "Police In-Car Router / Mobile Gateway", 78, "equipment"),
+    (r'(?i)airlink[\s_-]+(mp|mg|gx|rv)\b',
+     "SSID matches Sierra Wireless AirLink emergency vehicle router",
+     "Police In-Car Router / Mobile Gateway", 78, "equipment"),
+    (r'(?i)\b(pepwave|peplink)[\s_-]+(max|transit)\b',
+     "SSID matches Peplink Transit in-vehicle router",
+     "Police In-Car Router / Mobile Gateway", 75, "equipment"),
+    (r'(?i)\b(cad[\s_-]+mobile|cad[\s_-]+unit|dispatch[\s_-]+unit)\b',
+     "SSID matches Computer-Aided Dispatch (CAD) mobile unit",
+     "Police CAD / Dispatch Unit", 82, "agency"),
+    (r'(?i)\b(k9[\s_-]+unit|traffic[\s_-]+unit|patrol[\s_-]+unit)\b',
+     "SSID matches designated police specialty patrol unit",
+     "Police Patrol Vehicle", 84, "agency"),
+
     # --- Municipal / fleet (MEDIUM-LOW, generic) ---
     (r'(?i)\bmunicipal\b', "SSID references 'municipal'",
      "Municipal Vehicle", 60, "municipal"),
@@ -505,9 +597,9 @@ class PoliceVehicleDetector:
                     f"Shares hardware vendor with {entry['description']} ({oui})"
                 )
 
-        # --- Step 2b: Capability string analysis (EAP boost) -------------------
+        # --- Step 2b: Capability string analysis (EAP & MFP boost) ------------
+        caps = (capabilities or "").upper()
         if oui_matched:
-            caps = (capabilities or "").upper()
             if "EAP" in caps:
                 new_score = min(95, confidence_score + 15)
                 if new_score > confidence_score:
@@ -515,6 +607,15 @@ class PoliceVehicleDetector:
                     reasons.append("Enterprise auth (EAP) on fleet-grade hardware")
                     if "enterprise_auth" not in indicators:
                         indicators.append("enterprise_auth")
+
+            # 802.11w Management Frame Protection (MFP) boost (standard on government/fleet APs)
+            if "MFPC" in caps or "MFPR" in caps:
+                new_score = min(95, confidence_score + 8)
+                if new_score > confidence_score:
+                    confidence_score = new_score
+                    reasons.append("Protected Management Frames (802.11w MFP) active")
+                    if "mfp" not in indicators:
+                        indicators.append("mfp")
 
         # --- Step 2c: Frequency band hint (5 GHz on hidden fleet router) -------
         if oui_matched:
@@ -527,6 +628,17 @@ class PoliceVehicleDetector:
                 reasons.append(
                     "5 GHz band on hidden fleet router (less common for residential)"
                 )
+
+        # --- Step 2d: WPS Penalty (False Positive Mitigator) ------------------
+        # Fleet and police in-vehicle routers almost never enable consumer WPS PIN/PBC.
+        # If WPS is enabled, it strongly indicates a consumer/residential AP.
+        if "WPS" in caps and not ssid_matched:
+            if confidence_score > 0:
+                confidence_score = max(0, confidence_score - 30)
+                reasons.append("Consumer WPS enabled (penalized fleet suspicion)")
+                # If confidence dropped below 50, revoke flagged police status
+                if confidence_score < 50:
+                    is_police = False
 
         # --- Step 3: Confidence tier --------------------------------------------
         if confidence_score >= 95:

@@ -2,38 +2,159 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CIVOPS-Radar - Wi-Fi Network Scanner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CIVOPS-Radar - Recon & Surveillance HUD</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --radar-size: min(84vw, 560px);
+            --hud-primary: #10b981;
+            --hud-flock: #ec4899;
+            --hud-police: #3b82f6;
+            --hud-bg-glass: rgba(10, 15, 29, 0.78);
+            --hud-border-glass: rgba(16, 185, 129, 0.25);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
         body {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            font-family: 'Courier New', monospace;
+            background-color: #050811;
+            background-image: 
+                radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 80%),
+                linear-gradient(to right, rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 40px 40px, 40px 40px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #d1fae5;
             overflow: hidden;
-        }
-        
-        .radar-container {
-            position: relative;
-            width: 100%;
             height: 100vh;
-            overflow: hidden;
+            width: 100vw;
         }
-        
+
+        /* Scanline Overlay Effect */
+        .scanlines {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 100;
+            pointer-events: none;
+            opacity: 0.45;
+        }
+
+        /* Glassmorphism Panels */
+        .hud-glass {
+            background: var(--hud-bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--hud-border-glass);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), inset 0 0 12px rgba(16, 185, 129, 0.08);
+            border-radius: 14px;
+        }
+
+        /* Top Header HUD */
+        .top-hud-bar {
+            height: 52px;
+            border-bottom: 1px solid rgba(16, 185, 129, 0.2);
+            background: rgba(5, 8, 17, 0.85);
+            backdrop-filter: blur(12px);
+        }
+
+        /* Responsive Layout Grid */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 340px 1fr 300px;
+            height: calc(100vh - 52px);
+            overflow: hidden;
+            position: relative;
+        }
+
+        @media (max-width: 1100px) {
+            .main-layout {
+                grid-template-columns: 320px 1fr;
+            }
+            .stats-column {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            .sidebar-panel {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                height: 48vh;
+                z-index: 40;
+                border-radius: 20px 20px 0 0;
+                box-shadow: 0 -10px 40px rgba(0,0,0,0.8);
+                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .sidebar-panel.minimized {
+                transform: translateY(calc(48vh - 44px));
+            }
+            .radar-viewport {
+                height: 52vh !important;
+            }
+            :root {
+                --radar-size: min(88vw, 360px);
+            }
+        }
+
+        /* Radar Viewport & Rings */
+        .radar-viewport {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+        }
+
         .radar-screen {
+            position: relative;
+            width: var(--radar-size);
+            height: var(--radar-size);
+            border-radius: 50%;
+            border: 2px solid rgba(16, 185, 129, 0.8);
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.02) 65%, transparent 72%);
+            box-shadow: 
+                0 0 35px rgba(16, 185, 129, 0.25),
+                inset 0 0 30px rgba(16, 185, 129, 0.12);
+        }
+
+        /* Crosshairs */
+        .radar-crosshair-x {
             position: absolute;
             top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 600px;
-            height: 600px;
-            border: 2px solid #10b981;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
-            box-shadow: 
-                0 0 20px rgba(16, 185, 129, 0.3),
-                inset 0 0 20px rgba(16, 185, 129, 0.1);
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.3) 20%, rgba(16, 185, 129, 0.7) 50%, rgba(16, 185, 129, 0.3) 80%, transparent);
+            pointer-events: none;
         }
-        
+
+        .radar-crosshair-y {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            width: 1px;
+            height: 100%;
+            background: linear-gradient(180deg, transparent, rgba(16, 185, 129, 0.3) 20%, rgba(16, 185, 129, 0.7) 50%, rgba(16, 185, 129, 0.3) 80%, transparent);
+            pointer-events: none;
+        }
+
+        /* Center Emitter Point */
         .radar-center {
             position: absolute;
             top: 50%;
@@ -43,53 +164,77 @@
             height: 12px;
             background: #10b981;
             border-radius: 50%;
-            box-shadow: 
-                0 0 15px #10b981,
-                0 0 30px rgba(16, 185, 129, 0.5);
-            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 15px #10b981, 0 0 30px rgba(16, 185, 129, 0.6);
+            z-index: 10;
         }
-        
-        @keyframes pulse {
-            0%, 100% { transform: translate(-50%, -50%) scale(1); }
-            50% { transform: translate(-50%, -50%) scale(1.2); }
+
+        .radar-center::before {
+            content: '';
+            position: absolute;
+            top: -6px; left: -6px; right: -6px; bottom: -6px;
+            border: 1px solid rgba(16, 185, 129, 0.6);
+            border-radius: 50%;
+            animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
         }
-        
-        .radar-sweep {
+
+        /* Sweep Beam with gradient cone */
+        .radar-sweep-beam {
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 3px;
-            height: 300px;
-            background: linear-gradient(to top, transparent, #10b981, #10b981);
-            transform-origin: bottom center;
+            width: calc(var(--radar-size) / 2);
+            height: calc(var(--radar-size) / 2);
+            transform-origin: top left;
+            background: conic-gradient(from 180deg at 0% 0%, rgba(16, 185, 129, 0.45) 0deg, rgba(16, 185, 129, 0.1) 35deg, transparent 60deg);
+            border-top: 2px solid #10b981;
             animation: sweep 4s linear infinite;
-            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+            pointer-events: none;
+            filter: drop-shadow(0 0 6px #10b981);
         }
-        
+
         @keyframes sweep {
-            from { transform: translate(-50%, -50%) rotate(0deg); }
-            to { transform: translate(-50%, -50%) rotate(360deg); }
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
-        
+
+        /* Range Rings */
         .range-ring {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            border: 1px solid rgba(16, 185, 129, 0.4);
+            border: 1px dashed rgba(16, 185, 129, 0.35);
             border-radius: 50%;
-            animation: ringPulse 3s ease-in-out infinite;
+            pointer-events: none;
         }
-        
-        .range-ring:nth-child(1) { animation-delay: 0s; }
-        .range-ring:nth-child(2) { animation-delay: 1s; }
-        .range-ring:nth-child(3) { animation-delay: 2s; }
-        
-        @keyframes ringPulse {
-            0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
-            50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.05); }
+
+        .range-label {
+            position: absolute;
+            color: rgba(16, 185, 129, 0.6);
+            font-size: 9px;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            top: 50%;
+            transform: translateY(-50%);
+            padding-left: 4px;
+            pointer-events: none;
         }
-        
+
+        /* Compass Markers (N, E, S, W) */
+        .compass-marker {
+            position: absolute;
+            color: #34d399;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            pointer-events: none;
+        }
+        .compass-n { top: 6px; left: 50%; transform: translateX(-50%); }
+        .compass-s { bottom: 6px; left: 50%; transform: translateX(-50%); }
+        .compass-e { right: 8px; top: 50%; transform: translateY(-50%); }
+        .compass-w { left: 8px; top: 50%; transform: translateY(-50%); }
+
+        /* Network Blip Dots */
         .network-dot {
             position: absolute;
             width: 10px;
@@ -97,525 +242,362 @@
             border-radius: 50%;
             transform: translate(-50%, -50%);
             cursor: pointer;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            animation: dotAppear 0.5s ease-out;
-        }
-        
-        @keyframes dotAppear {
-            from { 
-                opacity: 0; 
-                transform: translate(-50%, -50%) scale(0); 
-            }
-            to { 
-                opacity: 1; 
-                transform: translate(-50%, -50%) scale(1); 
-            }
-        }
-        
-        .network-dot:hover {
-            transform: translate(-50%, -50%) scale(1.8);
-            z-index: 10;
-            animation: dotHover 0.3s ease-out;
-        }
-        
-        @keyframes dotHover {
-            0% { transform: translate(-50%, -50%) scale(1); }
-            50% { transform: translate(-50%, -50%) scale(2.2); }
-            100% { transform: translate(-50%, -50%) scale(1.8); }
-        }
-        
-        .network-dot.low-risk { 
-            background: #10b981; 
-            box-shadow: 0 0 12px #10b981, 0 0 24px rgba(16, 185, 129, 0.3);
-            animation: lowRiskPulse 3s ease-in-out infinite;
-        }
-        
-        .network-dot.medium-risk { 
-            background: #f59e0b; 
-            box-shadow: 0 0 12px #f59e0b, 0 0 24px rgba(245, 158, 11, 0.3);
-            animation: mediumRiskPulse 2s ease-in-out infinite;
-        }
-        
-        .network-dot.high-risk { 
-            background: #ef4444; 
-            box-shadow: 0 0 12px #ef4444, 0 0 24px rgba(239, 68, 68, 0.3);
-            animation: highRiskPulse 1s ease-in-out infinite;
-        }
-
-        .network-dot.flock-camera {
-            background: #d946ef;
-            width: 14px;
-            height: 14px;
-            border: 2px solid #ffffff;
-            box-shadow: 0 0 15px #d946ef, 0 0 30px #a855f7, 0 0 45px rgba(217, 70, 239, 0.6);
-            animation: flockPulse 1.2s ease-in-out infinite;
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
             z-index: 15;
         }
 
-        .network-dot.flock-camera::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 24px;
-            height: 24px;
-            border: 1.5px solid #ec4899;
-            border-radius: 50%;
-            animation: flockRing 1.5s linear infinite;
+        .network-dot:hover {
+            transform: translate(-50%, -50%) scale(2.2);
+            z-index: 30;
         }
 
-        @keyframes flockPulse {
+        .network-dot.low-risk { 
+            background: #10b981; 
+            box-shadow: 0 0 10px #10b981; 
+        }
+        .network-dot.medium-risk { 
+            background: #f59e0b; 
+            box-shadow: 0 0 10px #f59e0b; 
+        }
+        .network-dot.high-risk { 
+            background: #ef4444; 
+            box-shadow: 0 0 12px #ef4444;
+            animation: pulse-red 1.2s infinite; 
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 8px #ef4444; }
+            50% { box-shadow: 0 0 20px #ef4444; transform: translate(-50%, -50%) scale(1.3); }
+        }
+
+        /* Flock Camera Blip */
+        .network-dot.flock-camera {
+            background: #ec4899;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 16px #ec4899, 0 0 30px #a855f7;
+            animation: flock-pulse 1.2s ease-in-out infinite;
+            z-index: 25;
+        }
+
+        @keyframes flock-pulse {
             0%, 100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1.2); }
-            50% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.7); }
+            50% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.8); }
         }
 
-        @keyframes flockRing {
-            0% { width: 14px; height: 14px; opacity: 1; }
-            100% { width: 36px; height: 36px; opacity: 0; }
-        }
-
-        .flock-alert-banner {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(76, 5, 89, 0.95);
-            border: 2px solid #ec4899;
-            border-radius: 12px;
-            padding: 10px 20px;
-            color: #fdf2f8;
-            z-index: 50;
-            box-shadow: 0 0 25px rgba(236, 72, 153, 0.6);
-            backdrop-filter: blur(10px);
-            display: none;
-            align-items: center;
-            gap: 12px;
-            animation: bannerPulse 1.5s infinite;
-        }
-
-        @keyframes bannerPulse {
-            0%, 100% { box-shadow: 0 0 15px rgba(236, 72, 153, 0.4); }
-            50% { box-shadow: 0 0 35px rgba(236, 72, 153, 0.9); }
-        }
-
-        .network-item.is-flock {
-            border: 1px solid rgba(217, 70, 239, 0.6);
-            background: rgba(168, 85, 247, 0.15);
-        }
-        .network-item.is-flock:hover {
-            background: rgba(217, 70, 239, 0.3);
-        }
-
+        /* Police Vehicle Blip */
         .network-dot.police-vehicle {
             background: #3b82f6;
             width: 14px;
             height: 14px;
             border: 2px solid #ffffff;
-            box-shadow: 0 0 15px #3b82f6, 0 0 30px #2563eb, 0 0 45px rgba(59, 130, 246, 0.6);
-            animation: policePulse 1.2s ease-in-out infinite;
-            z-index: 15;
+            box-shadow: 0 0 16px #3b82f6, 0 0 32px #2563eb;
+            animation: police-pulse 1.2s ease-in-out infinite;
+            z-index: 25;
         }
 
-        .network-dot.police-vehicle::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 24px;
-            height: 24px;
-            border: 1.5px solid #60a5fa;
-            border-radius: 50%;
-            animation: policeRing 1.5s linear infinite;
-        }
-
-        @keyframes policePulse {
+        @keyframes police-pulse {
             0%, 100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1.2); }
-            50% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.7); }
+            50% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.8); }
         }
 
-        @keyframes policeRing {
-            0% { width: 14px; height: 14px; opacity: 1; }
-            100% { width: 36px; height: 36px; opacity: 0; }
-        }
-
-        .police-alert-banner {
-            position: absolute;
-            top: 90px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(30, 58, 138, 0.95);
-            border: 2px solid #60a5fa;
-            border-radius: 12px;
-            padding: 10px 20px;
-            color: #eff6ff;
-            z-index: 50;
-            box-shadow: 0 0 25px rgba(96, 165, 250, 0.6);
-            backdrop-filter: blur(10px);
-            display: none;
-            align-items: center;
-            gap: 12px;
-            animation: policeBannerPulse 1.5s infinite;
-        }
-
-        @keyframes policeBannerPulse {
-            0%, 100% { box-shadow: 0 0 15px rgba(96, 165, 250, 0.4); }
-            50% { box-shadow: 0 0 35px rgba(96, 165, 250, 0.9); }
-        }
-
-        .network-item.is-police-vehicle {
-            border: 1px solid rgba(59, 130, 246, 0.6);
-            background: rgba(37, 99, 235, 0.15);
-        }
-        .network-item.is-police-vehicle:hover {
-            background: rgba(59, 130, 246, 0.3);
-        }
-        
-        @keyframes lowRiskPulse {
-            0%, 100% { opacity: 0.8; }
-            50% { opacity: 1; }
-        }
-        
-        @keyframes mediumRiskPulse {
-            0%, 100% { opacity: 0.9; transform: translate(-50%, -50%) scale(1); }
-            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
-        }
-        
-        @keyframes highRiskPulse {
-            0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
-        }
-        
-        .network-info {
-            position: absolute;
-            background: rgba(15, 23, 42, 0.98);
-            border: 2px solid #10b981;
-            border-radius: 12px;
-            padding: 16px;
-            color: #f1f5f9;
-            font-size: 13px;
-            max-width: 260px;
-            word-break: break-all;
-            z-index: 20;
-            display: none;
-            box-shadow: 
-                0 10px 25px rgba(0, 0, 0, 0.5),
-                0 0 20px rgba(16, 185, 129, 0.3);
-            backdrop-filter: blur(10px);
-            animation: infoSlideIn 0.3s ease-out;
-        }
-        
-        @keyframes infoSlideIn {
-            from { 
-                opacity: 0; 
-                transform: translateY(-10px) scale(0.9); 
-            }
-            to { 
-                opacity: 1; 
-                transform: translateY(0) scale(1); 
-            }
-        }
-        
-        .stats-panel {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(15, 23, 42, 0.95);
-            border: 2px solid #10b981;
-            border-radius: 12px;
-            padding: 20px;
-            color: #f1f5f9;
-            min-width: 220px;
-            box-shadow: 
-                0 10px 25px rgba(0, 0, 0, 0.3),
-                0 0 20px rgba(16, 185, 129, 0.2);
-            backdrop-filter: blur(10px);
-            animation: panelSlideIn 0.5s ease-out;
-        }
-        
-        @keyframes panelSlideIn {
-            from { 
-                opacity: 0; 
-                transform: translateX(20px); 
-            }
-            to { 
-                opacity: 1; 
-                transform: translateX(0); 
-            }
-        }
-        
-        .control-panel {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(15, 23, 42, 0.95);
-            border: 2px solid #10b981;
-            border-radius: 12px;
-            padding: 20px;
-            color: #f1f5f9;
-            box-shadow: 
-                0 10px 25px rgba(0, 0, 0, 0.3),
-                0 0 20px rgba(16, 185, 129, 0.2);
-            backdrop-filter: blur(10px);
-            animation: panelSlideIn 0.5s ease-out 0.2s both;
-        }
-        
-        .network-list {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(15, 23, 42, 0.95);
-            border: 2px solid #10b981;
-            border-radius: 12px;
-            padding: 20px;
-            color: #f1f5f9;
-            max-height: 450px;
-            overflow-y: auto;
-            width: 320px;
-            box-shadow: 
-                0 10px 25px rgba(0, 0, 0, 0.3),
-                0 0 20px rgba(16, 185, 129, 0.2);
-            backdrop-filter: blur(10px);
-            animation: panelSlideIn 0.5s ease-out 0.1s both;
-        }
-        
-        .network-item {
-            padding: 12px;
-            border-bottom: 1px solid rgba(16, 185, 129, 0.2);
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border-radius: 8px;
-            margin-bottom: 4px;
-        }
-        
-        .network-item:hover {
-            background: rgba(16, 185, 129, 0.15);
-            transform: translateX(5px);
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-        }
-        
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 10px;
-            animation: statusBlink 2s ease-in-out infinite;
-        }
-        
-        .status-scanning { 
-            background: #10b981; 
-            box-shadow: 0 0 8px #10b981;
-        }
-        .status-stopped { 
-            background: #ef4444; 
-            box-shadow: 0 0 8px #ef4444;
-        }
-        .status-error { 
-            background: #f59e0b; 
-            box-shadow: 0 0 8px #f59e0b;
-        }
-        
-        @keyframes statusBlink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        .button {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            transform: translateY(0);
-        }
-        
-        .button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-        }
-        
-        .button:active {
-            transform: translateY(0);
-        }
-        
-        .scanning-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle, transparent 0%, rgba(16, 185, 129, 0.1) 100%);
-            pointer-events: none;
-            animation: scanningOverlay 2s ease-in-out infinite;
-        }
-        
-        @keyframes scanningOverlay {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 0.6; }
-        }
-        
-        .signal-trail {
-            position: absolute;
-            width: 2px;
-            height: 20px;
-            background: linear-gradient(to top, transparent, #10b981);
-            border-radius: 1px;
-            animation: trailFade 1s ease-out forwards;
-        }
-        
-        @keyframes trailFade {
-            from { opacity: 1; transform: scaleY(1); }
-            to { opacity: 0; transform: scaleY(0.3); }
-        }
-
+        /* Bearing Direction Spikes */
         .direction-spike {
             position: absolute;
             width: 2px;
             border-radius: 1px;
             transform-origin: top center;
             pointer-events: none;
-            opacity: 0.75;
+            opacity: 0.8;
+            z-index: 12;
         }
-        .direction-spike.spike-normal   { background: rgba(16, 185, 129, 0.5); height: 18px; }
-        .direction-spike.spike-flock    { background: rgba(217, 70, 239, 0.8);  height: 26px; }
-        .direction-spike.spike-police   { background: rgba(59, 130, 246, 0.9);  height: 26px; }
+        .direction-spike.spike-normal { background: rgba(16, 185, 129, 0.45); height: 18px; }
+        .direction-spike.spike-flock  { background: rgba(236, 72, 153, 0.9); height: 26px; box-shadow: 0 0 6px #ec4899; }
+        .direction-spike.spike-police { background: rgba(59, 130, 246, 0.9); height: 26px; box-shadow: 0 0 6px #3b82f6; }
 
+        /* Trend Movement Indicator */
         .trend-label {
             position: absolute;
             font-size: 11px;
-            font-weight: bold;
+            font-weight: 800;
             pointer-events: none;
             transform: translate(-50%, -50%);
             text-shadow: 0 0 4px #000;
-            z-index: 20;
+            z-index: 22;
         }
-        .trend-label.approaching { color: #ef4444; }
+        .trend-label.approaching { color: #f43f5e; }
         .trend-label.receding    { color: #10b981; }
-        .trend-label.stable      { color: #94a3b8; }
+        .trend-label.stable      { color: #64748b; }
+
+        /* Alert Banners Floating at Top of Radar */
+        .alert-banner-stack {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 50;
+            width: 90%;
+            max-width: 480px;
+            pointer-events: none;
+        }
+
+        .hud-alert-banner {
+            border-radius: 10px;
+            padding: 8px 14px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            backdrop-filter: blur(12px);
+            animation: banner-glow 1.5s infinite alternate;
+        }
+
+        .flock-alert-banner {
+            background: rgba(76, 5, 89, 0.92);
+            border: 1px solid #ec4899;
+            color: #fdf2f8;
+            box-shadow: 0 0 24px rgba(236, 72, 153, 0.5);
+        }
+
+        .police-alert-banner {
+            background: rgba(15, 37, 95, 0.92);
+            border: 1px solid #60a5fa;
+            color: #eff6ff;
+            box-shadow: 0 0 24px rgba(96, 165, 250, 0.5);
+        }
+
+        @keyframes banner-glow {
+            from { filter: drop-shadow(0 0 4px currentColor); }
+            to { filter: drop-shadow(0 0 16px currentColor); }
+        }
+
+        /* Tooltip */
+        .network-info-card {
+            position: absolute;
+            background: rgba(10, 15, 28, 0.97);
+            border: 1px solid #10b981;
+            border-radius: 12px;
+            padding: 14px;
+            color: #f8fafc;
+            font-size: 12px;
+            min-width: 240px;
+            max-width: 300px;
+            z-index: 60;
+            display: none;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), 0 0 20px rgba(16, 185, 129, 0.2);
+            backdrop-filter: blur(12px);
+            pointer-events: none;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(16, 185, 129, 0.4);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(16, 185, 129, 0.8);
+        }
     </style>
 </head>
-<body class="bg-slate-900 text-green-400">
-    <div class="radar-container">
-        <!-- Flock Alert Banner -->
-        <div class="flock-alert-banner" id="flockAlertBanner">
-            <span class="text-2xl animate-pulse">🚨</span>
-            <div>
-                <div class="font-bold text-pink-300 tracking-wide text-xs">SURVEILLANCE RADAR ALERT</div>
-                <div class="text-sm font-semibold text-white" id="flockAlertDetail">Flock Safety ALPR camera detected nearby</div>
+<body class="flex flex-col">
+    <div class="scanlines"></div>
+
+    <!-- TOP HUD BAR -->
+    <header class="top-hud-bar flex items-center justify-between px-4 z-50">
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></div>
+            <div class="font-extrabold text-sm sm:text-base tracking-wider text-emerald-400 flex items-center gap-2">
+                <span>CIVOPS-RADAR</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/60 font-semibold tracking-normal">v2.1 SEC-RECON</span>
             </div>
         </div>
 
-        <!-- Police Vehicle Alert Banner -->
-        <div class="police-alert-banner" id="policeAlertBanner">
-            <span class="text-2xl animate-pulse">🚓</span>
-            <div>
-                <div class="font-bold text-blue-300 tracking-wide text-xs">POLICE VEHICLE ALERT</div>
-                <div class="text-sm font-semibold text-white" id="policeAlertDetail">Police vehicle equipment detected nearby</div>
+        <!-- Quick Telemetry Chips -->
+        <div class="hidden sm:flex items-center space-x-3 text-xs">
+            <div class="flex items-center space-x-1.5 bg-slate-900/80 px-2.5 py-1 rounded-md border border-slate-700/60">
+                <span class="text-slate-400">STATUS:</span>
+                <span id="headerStatusText" class="text-emerald-400 font-semibold">STANDBY</span>
+            </div>
+            <div class="flex items-center space-x-1.5 bg-slate-900/80 px-2.5 py-1 rounded-md border border-slate-700/60">
+                <span class="text-slate-400">SYS CLK:</span>
+                <span id="headerClock" class="text-cyan-400 font-mono">--:--:--</span>
             </div>
         </div>
 
-        <!-- Radar Screen -->
-        <div class="radar-screen" id="radarScreen">
-            <div class="radar-center"></div>
-            <div class="radar-sweep"></div>
-            
-            <!-- Range Rings -->
-            <div class="range-ring" style="width: 200px; height: 200px;"></div>
-            <div class="range-ring" style="width: 400px; height: 400px;"></div>
-            <div class="range-ring" style="width: 600px; height: 600px;"></div>
-            
-            <!-- Scanning Overlay -->
-            <div class="scanning-overlay" id="scanningOverlay" style="display: none;"></div>
+        <!-- Quick Action Trigger -->
+        <div class="flex items-center space-x-2">
+            <button id="quickScanBtn" class="flex items-center space-x-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-xs font-bold transition shadow-lg shadow-emerald-900/40 active:scale-95">
+                <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                <span>SWEEP</span>
+            </button>
         </div>
-        
-        <!-- Network List -->
-        <div class="network-list" id="networkList">
-            <div class="flex items-center justify-between mb-3">
-                <h3 class="text-base font-bold text-green-400">Networks</h3>
-                <div class="flex space-x-1 text-xs">
-                    <button id="filterAll" class="px-2 py-0.5 rounded bg-green-700 text-white font-bold transition">ALL</button>
-                    <button id="filterFlock" class="px-2 py-0.5 rounded bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-500 font-bold transition">🚨 FLOCK (<span id="filterFlockCount">0</span>)</button>
-                    <button id="filterPolice" class="px-2 py-0.5 rounded bg-blue-900/80 hover:bg-blue-800 text-blue-200 border border-blue-500 font-bold transition">🚓 POLICE (<span id="filterPoliceCount">0</span>)</button>
+    </header>
+
+    <!-- MAIN INTERFACE LAYOUT -->
+    <div class="main-layout">
+
+        <!-- LEFT SIDEBAR: Targets List & Filters -->
+        <section class="sidebar-panel hud-glass m-2 p-3 flex flex-col overflow-hidden z-30">
+            <!-- Filter Bar -->
+            <div class="flex flex-col gap-2 mb-2 pb-2 border-b border-emerald-900/50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-emerald-400 tracking-wider flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+                        RADAR TARGETS (<span id="totalVisibleCount">0</span>)
+                    </span>
+                    <span id="lastUpdateMini" class="text-[10px] text-slate-500">Just now</span>
+                </div>
+
+                <!-- Filter Segmented Control -->
+                <div class="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800 text-[11px] font-semibold">
+                    <button id="filterAll" class="py-1 rounded bg-emerald-600 text-white transition text-center">ALL</button>
+                    <button id="filterFlock" class="py-1 rounded hover:bg-pink-950/60 text-pink-300 border border-transparent hover:border-pink-800 transition text-center">🚨 FLOCK (<span id="filterFlockCount">0</span>)</button>
+                    <button id="filterPolice" class="py-1 rounded hover:bg-blue-950/60 text-blue-300 border border-transparent hover:border-blue-800 transition text-center">🚓 POLICE (<span id="filterPoliceCount">0</span>)</button>
                 </div>
             </div>
-            <div id="networkItems"></div>
-        </div>
-        
-        <!-- Statistics Panel -->
-        <div class="stats-panel">
-            <h3 class="text-lg font-bold mb-4 text-green-400">Statistics</h3>
-            <div class="space-y-2">
-                <div class="flex justify-between">
-                    <span>Total Networks:</span>
-                    <span id="totalNetworks" class="text-green-400">0</span>
-                </div>
-                <div class="flex justify-between">
-                    <span>Active Networks:</span>
-                    <span id="activeNetworks" class="text-green-400">0</span>
-                </div>
-                <div class="flex justify-between">
-                    <span>High Risk:</span>
-                    <span id="highRiskNetworks" class="text-red-400">0</span>
-                </div>
-                <div class="flex justify-between">
-                    <span>Open Networks:</span>
-                    <span id="openNetworks" class="text-yellow-400">0</span>
-                </div>
-                <div class="flex justify-between">
-                    <span>Hidden Networks:</span>
-                    <span id="hiddenNetworks" class="text-blue-400">0</span>
-                </div>
-                <div class="flex justify-between border-t border-purple-500/30 pt-2 mt-2">
-                    <span class="text-purple-300 font-bold">Flock Cameras:</span>
-                    <span id="flockCameras" class="text-purple-400 font-bold">0</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-purple-300 font-bold">ALPR Nodes:</span>
-                    <span id="alprCameras" class="text-purple-400 font-bold">0</span>
-                </div>
-                <div class="flex justify-between border-t border-blue-500/30 pt-2 mt-2">
-                    <span class="text-blue-300 font-bold">Police Vehicles:</span>
-                    <span id="policeVehicles" class="text-blue-400 font-bold">0</span>
-                </div>
+
+            <!-- Target Cards Stream -->
+            <div id="networkItems" class="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                <!-- Dynamically populated -->
             </div>
-        </div>
-        
-        <!-- Control Panel -->
-        <div class="control-panel">
-            <h3 class="text-lg font-bold mb-3 text-green-400">Controls</h3>
-            <div class="space-y-2">
-                <button id="scanButton" class="button w-full bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg font-semibold text-sm">
-                    <span class="status-indicator status-scanning"></span>
-                    Start Scan
+
+            <!-- Bottom Mini Controls in Sidebar -->
+            <div class="pt-2 border-t border-emerald-900/50 flex gap-2">
+                <button id="flockDemoButton" class="flex-1 py-1.5 px-2 bg-pink-950/50 hover:bg-pink-900/70 border border-pink-700/60 text-pink-300 rounded text-[10px] font-bold transition flex items-center justify-center gap-1">
+                    <span>+ FLOCK DEMO</span>
                 </button>
-                <button id="flockScanButton" class="button w-full bg-gradient-to-r from-purple-700 to-pink-600 hover:from-purple-800 hover:to-pink-700 text-white px-3 py-2 rounded-lg font-semibold text-sm flex items-center justify-center space-x-2">
-                    <span>🎯</span>
-                    <span>Scan Flock Cameras</span>
-                </button>
-                <button id="flockDemoButton" class="button w-full bg-slate-800 hover:bg-slate-700 border border-purple-500/50 text-purple-300 px-2 py-1.5 rounded-lg text-xs font-semibold">
-                    + Test Flock Camera (Demo)
-                </button>
-                <button id="policeScanButton" class="button w-full bg-gradient-to-r from-blue-700 to-cyan-600 hover:from-blue-800 hover:to-cyan-700 text-white px-3 py-2 rounded-lg font-semibold text-sm flex items-center justify-center space-x-2">
-                    <span>🚓</span>
-                    <span>Scan Police Vehicles</span>
-                </button>
-                <button id="policeDemoButton" class="button w-full bg-slate-800 hover:bg-slate-700 border border-blue-500/50 text-blue-300 px-2 py-1.5 rounded-lg text-xs font-semibold">
-                    + Test Police Vehicle (Demo)
-                </button>
-                <button id="exportButton" class="button w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-semibold text-sm">
-                    Export Data
-                </button>
-                <button id="clearButton" class="button w-full bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg font-semibold text-sm">
-                    Clear Data
+                <button id="policeDemoButton" class="flex-1 py-1.5 px-2 bg-blue-950/50 hover:bg-blue-900/70 border border-blue-700/60 text-blue-300 rounded text-[10px] font-bold transition flex items-center justify-center gap-1">
+                    <span>+ POLICE DEMO</span>
                 </button>
             </div>
-            <div class="mt-3 text-xs">
-                <div>Status: <span id="statusText" class="text-green-400">Ready</span></div>
-                <div>Last Update: <span id="lastUpdate" class="text-gray-400">Never</span></div>
+        </section>
+
+        <!-- CENTER VIEWPORT: HUD Radar Display -->
+        <main class="radar-viewport">
+            <!-- Floating Alert Banner Stack -->
+            <div class="alert-banner-stack">
+                <div class="hud-alert-banner flock-alert-banner" id="flockAlertBanner">
+                    <span class="text-xl">🚨</span>
+                    <div class="flex-1">
+                        <div class="font-bold text-pink-200 text-[10px] tracking-wider uppercase">SURVEILLANCE RADAR ALERT</div>
+                        <div class="text-xs font-semibold text-white" id="flockAlertDetail">Flock Safety ALPR camera detected nearby</div>
+                    </div>
+                </div>
+
+                <div class="hud-alert-banner police-alert-banner" id="policeAlertBanner">
+                    <span class="text-xl">🚓</span>
+                    <div class="flex-1">
+                        <div class="font-bold text-blue-200 text-[10px] tracking-wider uppercase">TACTICAL POLICE FLEET ALERT</div>
+                        <div class="text-xs font-semibold text-white" id="policeAlertDetail">Police vehicle equipment detected nearby</div>
+                    </div>
+                </div>
             </div>
-        </div>
+
+            <!-- The Circular Radar Screen -->
+            <div class="radar-screen" id="radarScreen">
+                <!-- Compass Points -->
+                <div class="compass-marker compass-n">N 000°</div>
+                <div class="compass-marker compass-e">E 090°</div>
+                <div class="compass-marker compass-s">S 180°</div>
+                <div class="compass-marker compass-w">W 270°</div>
+
+                <!-- Crosshairs -->
+                <div class="radar-crosshair-x"></div>
+                <div class="radar-crosshair-y"></div>
+
+                <!-- Range Concentric Rings -->
+                <div class="range-ring" style="width: 33.3%; height: 33.3%;"></div>
+                <span class="range-label" style="left: 66.6%;">50m</span>
+
+                <div class="range-ring" style="width: 66.6%; height: 66.6%;"></div>
+                <span class="range-label" style="left: 83.3%;">150m</span>
+
+                <div class="range-ring" style="width: 98%; height: 98%;"></div>
+                <span class="range-label" style="left: 95%;">250m</span>
+
+                <!-- Central Node -->
+                <div class="radar-center"></div>
+
+                <!-- Sweep Cone Beam -->
+                <div class="radar-sweep-beam"></div>
+            </div>
+        </main>
+
+        <!-- RIGHT SIDEBAR: Telemetry & System Operations -->
+        <aside class="stats-column hud-glass m-2 p-3 flex flex-col justify-between z-30">
+            <!-- Telemetry Stats Group -->
+            <div>
+                <h3 class="text-xs font-extrabold text-emerald-400 tracking-wider mb-2.5 flex items-center gap-1.5 pb-2 border-b border-emerald-900/50">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    RF TELEMETRY
+                </h3>
+
+                <div class="space-y-1.5 text-xs">
+                    <div class="flex justify-between py-1 px-2 rounded bg-slate-950/60 border border-slate-900">
+                        <span class="text-slate-400">Total Discovered:</span>
+                        <span id="totalNetworks" class="text-emerald-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between py-1 px-2 rounded bg-slate-950/60 border border-slate-900">
+                        <span class="text-slate-400">Active (15m):</span>
+                        <span id="activeNetworks" class="text-cyan-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between py-1 px-2 rounded bg-slate-950/60 border border-slate-900">
+                        <span class="text-slate-400">High Risk Factor:</span>
+                        <span id="highRiskNetworks" class="text-rose-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between py-1 px-2 rounded bg-slate-950/60 border border-slate-900">
+                        <span class="text-slate-400">Open / Unencrypted:</span>
+                        <span id="openNetworks" class="text-amber-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between py-1 px-2 rounded bg-slate-950/60 border border-slate-900">
+                        <span class="text-slate-400">Cloaked (Hidden):</span>
+                        <span id="hiddenNetworks" class="text-indigo-400 font-bold">0</span>
+                    </div>
+
+                    <!-- Priority Threats Counters -->
+                    <div class="mt-3 pt-2 border-t border-emerald-950 flex flex-col gap-1.5">
+                        <div class="flex justify-between items-center py-1 px-2 rounded bg-pink-950/40 border border-pink-900/60">
+                            <span class="text-pink-300 font-bold flex items-center gap-1">🚨 Flock ALPR:</span>
+                            <span id="flockCameras" class="text-pink-400 font-extrabold text-sm">0</span>
+                        </div>
+                        <div class="flex justify-between items-center py-1 px-2 rounded bg-blue-950/40 border border-blue-900/60">
+                            <span class="text-blue-300 font-bold flex items-center gap-1">🚓 Police Fleet:</span>
+                            <span id="policeVehicles" class="text-blue-400 font-extrabold text-sm">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Action Controls -->
+            <div class="mt-4 pt-2 border-t border-emerald-900/50 space-y-2">
+                <button id="scanButton" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-950">
+                    <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                    <span>START SCANNER</span>
+                </button>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="exportButton" class="w-full bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-800/60 py-1.5 rounded text-[11px] font-semibold transition">
+                        EXPORT JSON
+                    </button>
+                    <button id="clearButton" class="w-full bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 py-1.5 rounded text-[11px] font-semibold transition">
+                        PURGE DB
+                    </button>
+                </div>
+            </div>
+        </aside>
     </div>
-    
-    <!-- Network Info Tooltip -->
-    <div class="network-info" id="networkInfo"></div>
+
+    <!-- Floating HUD Details Card (Tooltip) -->
+    <div class="network-info-card" id="networkInfo"></div>
 
     <script>
         class RadarDisplay {
@@ -624,6 +606,7 @@
                 this.networkList = document.getElementById('networkItems');
                 this.networkInfo = document.getElementById('networkInfo');
                 this.scanButton = document.getElementById('scanButton');
+                this.quickScanBtn = document.getElementById('quickScanBtn');
                 this.exportButton = document.getElementById('exportButton');
                 this.clearButton = document.getElementById('clearButton');
                 
@@ -632,18 +615,31 @@
                 this.updateInterval = null;
                 this.activeFilter = 'all';
                 this.rssiHistory = new Map(); // bssid -> [level, ...] (last 3 readings)
-                
+
                 this.init();
             }
             
             init() {
                 this.setupEventListeners();
+                this.startClock();
                 this.startAutoUpdate();
+                this.updateSignals();
                 this.updateStatistics();
             }
             
+            startClock() {
+                const clockEl = document.getElementById('headerClock');
+                const tick = () => {
+                    const now = new Date();
+                    clockEl.textContent = now.toTimeString().split(' ')[0];
+                };
+                tick();
+                setInterval(tick, 1000);
+            }
+
             setupEventListeners() {
                 this.scanButton.addEventListener('click', () => this.toggleScan());
+                this.quickScanBtn.addEventListener('click', () => this.triggerSingleScan());
                 this.exportButton.addEventListener('click', () => this.exportData());
                 this.clearButton.addEventListener('click', () => this.clearData());
 
@@ -655,16 +651,30 @@
                 if (flockDemo) flockDemo.addEventListener('click', () => this.injectDemo('flock'));
                 const policeDemo = document.getElementById('policeDemoButton');
                 if (policeDemo) policeDemo.addEventListener('click', () => this.injectDemo('police'));
-
-                // The dedicated scan buttons trigger the same manual scan as the main button.
-                const flockScan = document.getElementById('flockScanButton');
-                if (flockScan) flockScan.addEventListener('click', () => this.startScan());
-                const policeScan = document.getElementById('policeScanButton');
-                if (policeScan) policeScan.addEventListener('click', () => this.startScan());
             }
 
             setFilter(filter) {
                 this.activeFilter = filter;
+                
+                // Update button states
+                const btns = {
+                    all: document.getElementById('filterAll'),
+                    flock: document.getElementById('filterFlock'),
+                    police: document.getElementById('filterPolice')
+                };
+
+                Object.keys(btns).forEach(k => {
+                    if (k === filter) {
+                        btns[k].className = k === 'flock' 
+                            ? 'py-1 rounded bg-pink-700 text-white font-bold transition text-center'
+                            : k === 'police'
+                            ? 'py-1 rounded bg-blue-700 text-white font-bold transition text-center'
+                            : 'py-1 rounded bg-emerald-600 text-white font-bold transition text-center';
+                    } else {
+                        btns[k].className = 'py-1 rounded hover:bg-slate-800 text-slate-400 border border-transparent transition text-center';
+                    }
+                });
+
                 this.updateNetworkList();
             }
 
@@ -673,16 +683,24 @@
                     const endpoint = kind === 'police' ? '/api/police-vehicle/demo' : '/api/flock/demo';
                     const response = await fetch(endpoint, { method: 'POST' });
                     const data = await response.json();
-                    if (data.error) {
-                        this.updateStatus('Demo failed: ' + data.error);
-                    } else {
-                        this.updateStatus('Demo data injected');
-                    }
                     await this.updateSignals();
                     this.updateStatistics();
                 } catch (error) {
                     console.error('Demo injection failed:', error);
-                    this.updateStatus('Demo injection failed');
+                }
+            }
+
+            async triggerSingleScan() {
+                try {
+                    this.quickScanBtn.classList.add('bg-cyan-600');
+                    await fetch('/api/scan/start');
+                    setTimeout(() => {
+                        this.quickScanBtn.classList.remove('bg-cyan-600');
+                        this.updateSignals();
+                        this.updateStatistics();
+                    }, 1200);
+                } catch (e) {
+                    console.error(e);
                 }
             }
             
@@ -701,14 +719,13 @@
                     
                     if (data.status === 'scan_started') {
                         this.isScanning = true;
-                        this.scanButton.innerHTML = '<span class="status-indicator status-scanning"></span>Stop Scan';
-                        this.updateStatus('Scanning...');
-                        this.showScanningOverlay();
-                        this.createSignalTrails();
+                        this.scanButton.className = 'w-full bg-rose-600 hover:bg-rose-500 text-white py-2 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-rose-950';
+                        this.scanButton.innerHTML = '<span class="w-2 h-2 rounded-full bg-white animate-ping"></span><span>HALT SCANNER</span>';
+                        document.getElementById('headerStatusText').textContent = 'ACTIVE SWEEP';
+                        document.getElementById('headerStatusText').className = 'text-cyan-400 font-semibold animate-pulse';
                     }
                 } catch (error) {
                     console.error('Failed to start scan:', error);
-                    this.updateStatus('Error starting scan');
                 }
             }
             
@@ -719,13 +736,13 @@
                     
                     if (data.status === 'scan_stopped') {
                         this.isScanning = false;
-                        this.scanButton.innerHTML = '<span class="status-indicator status-stopped"></span>Start Scan';
-                        this.updateStatus('Stopped');
-                        this.hideScanningOverlay();
+                        this.scanButton.className = 'w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-950';
+                        this.scanButton.innerHTML = '<span class="w-2 h-2 rounded-full bg-white animate-pulse"></span><span>START SCANNER</span>';
+                        document.getElementById('headerStatusText').textContent = 'STANDBY';
+                        document.getElementById('headerStatusText').className = 'text-emerald-400 font-semibold';
                     }
                 } catch (error) {
                     console.error('Failed to stop scan:', error);
-                    this.updateStatus('Error stopping scan');
                 }
             }
             
@@ -742,16 +759,14 @@
                         a.click();
                         document.body.removeChild(a);
                         window.URL.revokeObjectURL(url);
-                        this.updateStatus('Data exported');
                     }
                 } catch (error) {
                     console.error('Export failed:', error);
-                    this.updateStatus('Export failed');
                 }
             }
             
             async clearData() {
-                if (confirm('Are you sure you want to clear all scan data?')) {
+                if (confirm('Purge all radar reconnaissance records from database?')) {
                     try {
                         await fetch('/api/clear', { method: 'POST' });
                     } catch (e) {
@@ -761,7 +776,6 @@
                     this.updateRadarDisplay();
                     this.updateNetworkList();
                     this.updateStatistics();
-                    this.updateStatus('Data cleared');
                 }
             }
             
@@ -782,8 +796,11 @@
                         this.updateRadarDisplay();
                         this.updateNetworkList();
                         this.updateAlerts();
-                        this.updateLastUpdate(data.timestamp);
-                        // Server-side aggregate flags (fast path — avoids iterating all signals)
+                        
+                        const time = new Date(data.timestamp).toLocaleTimeString();
+                        const mini = document.getElementById('lastUpdateMini');
+                        if (mini) mini.textContent = time;
+
                         if (!data.flock_detected) document.getElementById('flockAlertBanner').style.display = 'none';
                         if (!data.police_vehicle_detected) document.getElementById('policeAlertBanner').style.display = 'none';
                     }
@@ -795,7 +812,6 @@
             processSignals(signals) {
                 signals.forEach(signal => {
                     this.networks.set(signal.bssid, signal);
-                    // Track RSSI history for trend arrows
                     const hist = this.rssiHistory.get(signal.bssid) || [];
                     hist.push(signal.level);
                     if (hist.length > 3) hist.shift();
@@ -815,8 +831,8 @@
                     if (flockHits.length > 0) {
                         const nearest = flockHits.slice().sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
                         document.getElementById('flockAlertDetail').textContent =
-                            `${flockHits.length} Flock / ALPR camera${flockHits.length > 1 ? 's' : ''} nearby` +
-                            (nearest ? ` — nearest ${nearest.distance != null ? Number(nearest.distance).toFixed(1) + 'm' : 'unknown distance'}` : '');
+                            `${flockHits.length} camera${flockHits.length > 1 ? 's' : ''} in perimeter` +
+                            (nearest ? ` — Nearest: ${nearest.distance != null ? Number(nearest.distance).toFixed(1) + 'm' : 'unk'}` : '');
                         flockBanner.style.display = 'flex';
                     } else {
                         flockBanner.style.display = 'none';
@@ -828,8 +844,8 @@
                     if (policeHits.length > 0) {
                         const nearest = policeHits.slice().sort((a, b) => (a.distance || 999) - (b.distance || 999))[0];
                         document.getElementById('policeAlertDetail').textContent =
-                            `${policeHits.length} police vehicle${policeHits.length > 1 ? 's' : ''} nearby` +
-                            (nearest ? ` — nearest ${nearest.distance != null ? Number(nearest.distance).toFixed(1) + 'm' : 'unknown distance'}` : '');
+                            `${policeHits.length} vehicle${policeHits.length > 1 ? 's' : ''} in perimeter` +
+                            (nearest ? ` — Nearest: ${nearest.distance != null ? Number(nearest.distance).toFixed(1) + 'm' : 'unk'}` : '');
                         policeBanner.style.display = 'flex';
                     } else {
                         policeBanner.style.display = 'none';
@@ -840,64 +856,71 @@
             _computeTrend(hist) {
                 if (hist.length < 2) return 'stable';
                 const delta = hist[hist.length - 1] - hist[0];
-                if (delta > 3) return 'approaching';   // RSSI more positive = closer
+                if (delta > 3) return 'approaching';
                 if (delta < -3) return 'receding';
                 return 'stable';
             }
 
             updateRadarDisplay() {
-                // Clear existing network dots, spikes, and trend labels
+                // Clear existing dots, spikes, and trend labels
                 const existingDots = this.radarScreen.querySelectorAll('.network-dot, .direction-spike, .trend-label');
                 existingDots.forEach(dot => dot.remove());
                 
                 // Add network dots
-                this.networks.forEach((network, bssid) => {
-                    const dot = this.createNetworkDot(network);
+                this.networks.forEach((network) => {
+                    const dot = this.createNetworkDotWithAnimation(network);
                     this.radarScreen.appendChild(dot);
                 });
-            }
-            
-            createNetworkDot(network) {
-                return this.createNetworkDotWithAnimation(network);
             }
             
             showNetworkInfo(network, event) {
                 const info = this.networkInfo;
                 const distText = (network.distance != null && !isNaN(network.distance)) ? Number(network.distance).toFixed(1) + 'm' : 'Unknown';
+                
                 const flockTag = network.is_flock
-                    ? `<div class="mt-2 text-purple-400 font-bold text-xs">🚨 ${network.flock_type || 'Flock Camera'} &bull; ${network.alpr_confidence}</div>`
+                    ? `<div class="mt-2 text-pink-400 font-bold text-[11px] p-1.5 rounded bg-pink-950/60 border border-pink-700/60">🚨 ${network.flock_type || 'Flock Camera'} • ${network.alpr_confidence}</div>`
                     : '';
                 const policeTag = network.is_police_vehicle
-                    ? `<div class="text-blue-400 font-bold text-xs">🚓 ${network.police_vehicle_type || 'Police Vehicle'} &bull; ${network.police_confidence}</div>`
+                    ? `<div class="mt-2 text-blue-400 font-bold text-[11px] p-1.5 rounded bg-blue-950/60 border border-blue-700/60">🚓 ${network.police_vehicle_type || 'Police Vehicle'} • ${network.police_confidence}</div>`
                     : '';
+
                 info.innerHTML = `
-                    <div class="font-bold text-green-400">${network.ssid || 'Hidden Network'}</div>
-                    <div class="text-xs text-gray-400">${network.bssid}</div>
+                    <div class="flex items-center justify-between border-b border-emerald-900/60 pb-1.5 mb-1.5">
+                        <div class="font-extrabold text-emerald-400 text-sm truncate max-w-[180px]">${network.ssid || '<Hidden>'}</div>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded ${network.risk_score > 70 ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-slate-800 text-slate-300'} font-bold">
+                            RISK ${network.risk_score}
+                        </span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 font-mono">${network.bssid}</div>
                     ${flockTag}${policeTag}
-                    <div class="mt-2 space-y-1">
-                        <div>Signal: ${network.level} dBm</div>
-                        <div>Distance: ${distText}</div>
-                        <div>Risk: ${network.risk_score}/100</div>
-                        <div>Vendor: ${network.vendor || 'Unknown'}</div>
-                        <div>Security: ${network.capabilities || 'Unknown'}</div>
-                        <div>Frequency: ${network.frequency} MHz</div>
-                        <div>Scans: ${network.scan_count}</div>
+                    <div class="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-300">
+                        <div><span class="text-slate-500">SIGNAL:</span> <span class="font-bold text-cyan-400">${network.level} dBm</span></div>
+                        <div><span class="text-slate-500">DIST:</span> <span class="font-bold">${distText}</span></div>
+                        <div><span class="text-slate-500">FREQ:</span> ${network.frequency} MHz</div>
+                        <div><span class="text-slate-500">SCANS:</span> ${network.scan_count}</div>
+                    </div>
+                    <div class="mt-1.5 pt-1 border-t border-slate-800 text-[10px] text-slate-400 truncate">
+                        <span class="text-slate-500">SEC:</span> ${network.capabilities || 'Open'}
                     </div>
                 `;
                 
-                info.style.left = `${event.pageX + 10}px`;
-                info.style.top = `${event.pageY - 10}px`;
+                // Keep tooltip within visible boundaries
+                const posX = Math.min(window.innerWidth - 260, Math.max(10, event.clientX + 14));
+                const posY = Math.min(window.innerHeight - 200, Math.max(60, event.clientY - 14));
+                
+                info.style.left = `${posX}px`;
+                info.style.top = `${posY}px`;
                 info.style.display = 'block';
                 
-                // Hide info after 5 seconds
-                setTimeout(() => {
+                clearTimeout(this._tooltipTimeout);
+                this._tooltipTimeout = setTimeout(() => {
                     info.style.display = 'none';
-                }, 5000);
+                }, 5500);
             }
             
             updateNetworkList() {
                 let networks = Array.from(this.networks.values())
-                    .sort((a, b) => b.risk_score - a.risk_score);
+                    .sort((a, b) => (b.is_police_vehicle ? 1000 : 0) + (b.is_flock ? 500 : 0) + b.risk_score - ((a.is_police_vehicle ? 1000 : 0) + (a.is_flock ? 500 : 0) + a.risk_score));
 
                 if (this.activeFilter === 'flock') {
                     networks = networks.filter(n => n.is_flock);
@@ -905,34 +928,34 @@
                     networks = networks.filter(n => n.is_police_vehicle);
                 }
 
-                // Update filter counters
                 const all = Array.from(this.networks.values());
                 document.getElementById('filterFlockCount').textContent = all.filter(n => n.is_flock).length;
                 document.getElementById('filterPoliceCount').textContent = all.filter(n => n.is_police_vehicle).length;
+                document.getElementById('totalVisibleCount').textContent = networks.length;
 
                 this.networkList.innerHTML = networks.map(network => {
-                    const classes = ['network-item'];
-                    if (network.is_flock) classes.push('is-flock');
-                    if (network.is_police_vehicle) classes.push('is-police-vehicle');
+                    let borderClass = 'border-slate-800/80 bg-slate-950/60 hover:bg-emerald-950/30';
+                    let badge = '';
 
-                    let tag = '';
                     if (network.is_police_vehicle) {
-                        tag = `<div class="text-blue-400 text-xs font-bold">🚓 ${network.police_vehicle_type || 'Police Vehicle'} (${network.police_confidence})</div>`;
+                        borderClass = 'border-blue-700/80 bg-blue-950/40 hover:bg-blue-900/50 shadow-sm shadow-blue-900/30';
+                        badge = `<div class="text-[10px] text-blue-300 font-extrabold flex items-center gap-1">🚓 ${network.police_vehicle_type || 'POLICE'} (${network.police_confidence})</div>`;
                     } else if (network.is_flock) {
-                        tag = `<div class="text-purple-400 text-xs font-bold">🚨 ${network.flock_type || 'Flock'} (${network.alpr_confidence})</div>`;
+                        borderClass = 'border-pink-700/80 bg-pink-950/40 hover:bg-pink-900/50 shadow-sm shadow-pink-900/30';
+                        badge = `<div class="text-[10px] text-pink-300 font-extrabold flex items-center gap-1">🚨 ${network.flock_type || 'FLOCK'} (${network.alpr_confidence})</div>`;
                     }
 
                     return `
-                    <div class="${classes.join(' ')}" data-bssid="${network.bssid}">
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <div class="font-bold">${network.ssid || 'Hidden'}</div>
-                                <div class="text-xs text-gray-400">${network.bssid}</div>
-                                ${tag}
+                    <div class="p-2 rounded-lg border ${borderClass} transition cursor-pointer select-none group" data-bssid="${network.bssid}">
+                        <div class="flex justify-between items-start gap-1">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-xs truncate group-hover:text-emerald-300">${network.ssid || '<Hidden Network>'}</div>
+                                <div class="text-[10px] text-slate-500 font-mono truncate">${network.bssid}</div>
+                                ${badge}
                             </div>
-                            <div class="text-right">
-                                <div class="text-sm">${network.level} dBm</div>
-                                <div class="text-xs ${network.risk_score > 70 ? 'text-red-400' : network.risk_score > 30 ? 'text-yellow-400' : 'text-green-400'}">
+                            <div class="text-right shrink-0">
+                                <div class="text-xs font-mono font-bold text-cyan-400">${network.level} dBm</div>
+                                <div class="text-[10px] ${network.risk_score > 70 ? 'text-rose-400 font-bold' : network.risk_score > 30 ? 'text-amber-400' : 'text-emerald-400'}">
                                     Risk: ${network.risk_score}
                                 </div>
                             </div>
@@ -940,19 +963,20 @@
                     </div>
                 `;}).join('');
                 
-                // Add click events to network items
-                this.networkList.querySelectorAll('.network-item').forEach(item => {
+                // Add click events to network items for radar focal targeting
+                this.networkList.querySelectorAll('[data-bssid]').forEach(item => {
                     item.addEventListener('click', () => {
                         const bssid = item.dataset.bssid;
                         const network = this.networks.get(bssid);
                         if (network) {
-                            // Highlight corresponding dot on radar
                             const dot = this.radarScreen.querySelector(`[data-bssid="${bssid}"]`);
                             if (dot) {
-                                dot.style.transform = 'translate(-50%, -50%) scale(2)';
+                                dot.style.transform = 'translate(-50%, -50%) scale(3)';
+                                dot.style.filter = 'brightness(2.5)';
                                 setTimeout(() => {
                                     dot.style.transform = 'translate(-50%, -50%) scale(1)';
-                                }, 1000);
+                                    dot.style.filter = 'none';
+                                }, 1200);
                             }
                         }
                     });
@@ -970,69 +994,9 @@
                     document.getElementById('openNetworks').textContent = stats.open_networks || 0;
                     document.getElementById('hiddenNetworks').textContent = stats.hidden_networks || 0;
                     document.getElementById('flockCameras').textContent = stats.flock_cameras || 0;
-                    document.getElementById('alprCameras').textContent = stats.alpr_cameras || 0;
                     document.getElementById('policeVehicles').textContent = stats.police_vehicles || 0;
                 } catch (error) {
                     console.error('Failed to update statistics:', error);
-                }
-            }
-            
-            updateStatus(message) {
-                document.getElementById('statusText').textContent = message;
-            }
-            
-            updateLastUpdate(timestamp) {
-                const date = new Date(timestamp);
-                document.getElementById('lastUpdate').textContent = date.toLocaleTimeString();
-            }
-            
-            showScanningOverlay() {
-                const overlay = document.getElementById('scanningOverlay');
-                overlay.style.display = 'block';
-            }
-            
-            hideScanningOverlay() {
-                const overlay = document.getElementById('scanningOverlay');
-                overlay.style.display = 'none';
-            }
-            
-            createSignalTrails() {
-                if (!this.isScanning) return;
-                
-                // Create random signal trails
-                const radarScreen = this.radarScreen;
-                const centerX = 300;
-                const centerY = 300;
-                
-                for (let i = 0; i < 3; i++) {
-                    setTimeout(() => {
-                        const trail = document.createElement('div');
-                        trail.className = 'signal-trail';
-                        
-                        // Random position around radar
-                        const angle = Math.random() * 2 * Math.PI;
-                        const distance = 100 + Math.random() * 200;
-                        const x = centerX + Math.cos(angle) * distance;
-                        const y = centerY + Math.sin(angle) * distance;
-                        
-                        trail.style.left = `${x}px`;
-                        trail.style.top = `${y}px`;
-                        trail.style.transform = `rotate(${angle * 180 / Math.PI}deg)`;
-                        
-                        radarScreen.appendChild(trail);
-                        
-                        // Remove trail after animation
-                        setTimeout(() => {
-                            if (trail.parentNode) {
-                                trail.parentNode.removeChild(trail);
-                            }
-                        }, 1000);
-                    }, i * 200);
-                }
-                
-                // Continue creating trails while scanning
-                if (this.isScanning) {
-                    setTimeout(() => this.createSignalTrails(), 2000);
                 }
             }
             
@@ -1041,69 +1005,55 @@
                 dot.className = 'network-dot';
                 dot.setAttribute('data-bssid', network.bssid);
                 
-                // Determine risk level
                 let riskClass = 'low-risk';
                 if (network.risk_score > 70) riskClass = 'high-risk';
                 else if (network.risk_score > 30) riskClass = 'medium-risk';
                 
                 dot.classList.add(riskClass);
 
-                // Classification styling (police vehicles take visual precedence)
                 if (network.is_flock) dot.classList.add('flock-camera');
                 if (network.is_police_vehicle) dot.classList.add('police-vehicle');
 
-                // Position on radar
-                const centerX = 300;
-                const centerY = 300;
-                const x = centerX + (network.position.x * 300);
-                const y = centerY + (network.position.y * 300);
+                // Dynamic radar screen radius
+                const screenRect = this.radarScreen.getBoundingClientRect();
+                const radiusPx = (screenRect.width || 560) / 2;
+                const centerX = radiusPx;
+                const centerY = radiusPx;
+                
+                const x = centerX + (network.position.x * radiusPx);
+                const y = centerY + (network.position.y * radiusPx);
                 
                 dot.style.left = `${x}px`;
                 dot.style.top = `${y}px`;
                 
-                // Add click event for network info
                 dot.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.showNetworkInfo(network, e);
                 });
-                
-                // Add hover effects
-                dot.addEventListener('mouseenter', () => {
-                    dot.style.transform = 'translate(-50%, -50%) scale(1.8)';
-                });
-                
-                dot.addEventListener('mouseleave', () => {
-                    dot.style.transform = 'translate(-50%, -50%) scale(1)';
-                });
 
-                // Direction spike — points outward along the bearing angle
+                // Direction Bearing Spike
                 const spike = document.createElement('div');
                 spike.className = 'direction-spike';
                 if (network.is_police_vehicle) spike.classList.add('spike-police');
                 else if (network.is_flock)     spike.classList.add('spike-flock');
                 else                            spike.classList.add('spike-normal');
 
-                const angleRad  = (network.position.angle * Math.PI) / 180;
-                // spike top-center should sit exactly at the dot center; shift it so the
-                // top of the spike touches the dot edge and points outward.
-                const dotRadius = network.is_flock || network.is_police_vehicle ? 7 : 5; // px, half dot size
+                const angleRad = (network.position.angle * Math.PI) / 180;
+                const dotRadius = network.is_flock || network.is_police_vehicle ? 7 : 5;
                 const spikeOffsetX = x + Math.cos(angleRad) * dotRadius;
                 const spikeOffsetY = y + Math.sin(angleRad) * dotRadius;
 
                 spike.style.left = `${spikeOffsetX}px`;
                 spike.style.top  = `${spikeOffsetY}px`;
-                // Rotate so the spike points from center outward; CSS transform-origin is 'top center'
-                // angle 0 = right (+x), but CSS 0deg = up, so we offset by 90deg
                 spike.style.transform = `translate(-50%, 0) rotate(${network.position.angle + 90}deg)`;
                 this.radarScreen.appendChild(spike);
 
-                // Trend label for Flock and police dots
+                // Trend Movement Arrow (Flock/Police)
                 if ((network.is_flock || network.is_police_vehicle) && network._rssiTrend) {
                     const trendSymbol = { approaching: '▲', receding: '▼', stable: '·' };
                     const trendLabel = document.createElement('div');
                     trendLabel.className = `trend-label ${network._rssiTrend}`;
                     trendLabel.textContent = trendSymbol[network._rssiTrend] || '·';
-                    // Position it offset from the dot (above and slightly right)
                     trendLabel.style.left = `${x + 10}px`;
                     trendLabel.style.top  = `${y - 12}px`;
                     this.radarScreen.appendChild(trendLabel);
@@ -1113,15 +1063,14 @@
             }
         }
         
-        // Initialize radar display when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            new RadarDisplay();
+            window._radar = new RadarDisplay();
         });
         
-        // Hide network info when clicking elsewhere
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('.network-dot') && !e.target.closest('.network-info')) {
-                document.getElementById('networkInfo').style.display = 'none';
+            if (!e.target.closest('.network-dot') && !e.target.closest('.network-info-card')) {
+                const info = document.getElementById('networkInfo');
+                if (info) info.style.display = 'none';
             }
         });
     </script>

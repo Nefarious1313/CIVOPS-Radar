@@ -53,7 +53,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setDatabaseEnabled(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
         webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
 
@@ -118,6 +118,13 @@ public class MainActivity extends AppCompatActivity {
         public void clear() {
             scanner.clearData();
         }
+
+        @JavascriptInterface
+        public void openMap() {
+            Intent i = new Intent(MainActivity.this, MapActivity.class);
+            i.putExtra("signals", scanner.getSignalsJson());
+            startActivity(i);
+        }
     }
 
     private void checkPermissionsAndStart() {
@@ -133,6 +140,11 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
                 neededPermissions.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+            }
+            // Android 13+ gates notifications behind a runtime permission; without it
+            // the radar alert notifications are silently dropped.
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                neededPermissions.add(Manifest.permission.POST_NOTIFICATIONS);
             }
         }
 

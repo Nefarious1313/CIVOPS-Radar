@@ -19,8 +19,9 @@ else
 fi
 RADAR_DIR="${RADAR_DIR:-$PROJECT_ROOT}"
 DB_PATH="${RADAR_DIR}/data/scans.db"
-SCAN_INTERVAL=5  # seconds between scans
+SCAN_INTERVAL=30  # seconds between scans (Android throttles: ~4 scans/2 min)
 MAX_SCANS=1000   # maximum scans to keep in database
+MAX_BACKOFF=300  # cap on the throttle-backoff sleep (seconds)
 LOG_FILE="${RADAR_DIR}/scan.log"
 
 # Colors for output
@@ -450,9 +451,11 @@ show_stats() {
 # Main scanning loop
 scan_loop() {
     local scan_count=0
-    
+    local fail_streak=0
+    local sleep_for
+
     log "${GREEN}Starting CIVOPS-Radar scanning loop...${NC}"
-    log "Scan interval: ${SCAN_INTERVAL} seconds"
+    log "Scan interval: ${SCAN_INTERVAL} seconds (backoff up to ${MAX_BACKOFF}s when throttled)"
     log "Press Ctrl+C to stop"
     
     while true; do
@@ -461,12 +464,23 @@ scan_loop() {
         
         if perform_scan; then
             show_stats
+            fail_streak=0
         else
-            log "${YELLOW}Scan failed, retrying in ${SCAN_INTERVAL} seconds...${NC}"
+            # Android throttles Wi-Fi scans (~4 per 2 min for a foreground app).
+            # Back off instead of retrying at the normal interval, which only
+            # deepens the throttle.
+            fail_streak=$((fail_streak + 1))
+            sleep_for=$(( SCAN_INTERVAL * fail_streak ))
+            if (( sleep_for > MAX_BACKOFF )); then
+                sleep_for=$MAX_BACKOFF
+            fi
+            log "${YELLOW}Scan failed/throttled (${fail_streak} in a row); backing off ${sleep_for}s...${NC}"
+            sleep "$sleep_for"
+            continue
         fi
         
         # Cleanup every 10 scans
-        if ((scan_count % 10 == 0)); then
+        if (( scan_count % 10 == 0 )); then
             cleanup_old_scans
         fi
         

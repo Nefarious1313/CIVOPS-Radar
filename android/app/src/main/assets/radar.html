@@ -434,6 +434,12 @@
     </style>
 </head>
 <body class="flex flex-col">
+    <div style="position:sticky;top:0;z-index:9999;background:#0f172a;padding:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="color:#cbd5e1;font-size:11px;"><input type="checkbox" id="toggleScannerAudio"> Police Scanner Audio</label>
+        <audio id="scannerAudio" src="https://broadcastify.com/listen/feed/1" preload="none" controls style="height:24px;"></audio>
+        <label style="color:#cbd5e1;font-size:11px;"><input type="checkbox" id="toggleCrime"> Crime Incidents Layer</label>
+        <button id="mapButton" style="background:#312e81;color:#c7d2fe;border:1px solid #4338ca;padding:4px 8px;border-radius:4px;font-size:11px;">SHOW MAP</button>
+    </div>
     <div class="scanlines"></div>
 
     <!-- TOP HUD BAR -->
@@ -508,6 +514,8 @@
                     <span>+ DRONE</span>
                 </button>
             </div>
+
+
         </section>
 
         <!-- CENTER VIEWPORT: HUD Radar Display -->
@@ -726,8 +734,8 @@
 
             async injectDemo(kind) {
                 try {
-                    const endpoint = kind === 'police'
-                        ? '/api/police-vehicle/demo'
+                    const endpoint = kind === 'police' 
+                        ? '/api/police-vehicle/demo' 
                         : kind === 'drone'
                         ? '/api/drone/demo'
                         : '/api/flock/demo';
@@ -881,6 +889,7 @@
                 const networks = Array.from(this.networks.values());
                 const flockHits = networks.filter(n => n.is_flock);
                 const policeHits = networks.filter(n => n.is_police_vehicle);
+                const droneHits = networks.filter(n => n.is_drone);
 
                 const flockBanner = document.getElementById('flockAlertBanner');
                 if (flockBanner) {
@@ -908,7 +917,6 @@
                     }
                 }
 
-                const droneHits = networks.filter(n => n.is_drone);
                 const droneBanner = document.getElementById('droneAlertBanner');
                 if (droneBanner) {
                     if (droneHits.length > 0) {
@@ -993,20 +1001,17 @@
             
             updateNetworkList() {
                 let networks = Array.from(this.networks.values())
-                    .sort((a, b) => (b.is_police_vehicle ? 1000 : 0) + (b.is_flock ? 500 : 0) + (b.is_drone ? 750 : 0) + b.risk_score - ((a.is_police_vehicle ? 1000 : 0) + (a.is_flock ? 500 : 0) + (a.is_drone ? 750 : 0) + a.risk_score));
+                    .sort((a, b) => (b.is_police_vehicle ? 1000 : 0) + (b.is_flock ? 500 : 0) + b.risk_score - ((a.is_police_vehicle ? 1000 : 0) + (a.is_flock ? 500 : 0) + a.risk_score));
 
                 if (this.activeFilter === 'flock') {
                     networks = networks.filter(n => n.is_flock);
                 } else if (this.activeFilter === 'police') {
                     networks = networks.filter(n => n.is_police_vehicle);
-                } else if (this.activeFilter === 'drone') {
-                    networks = networks.filter(n => n.is_drone);
                 }
 
                 const all = Array.from(this.networks.values());
                 document.getElementById('filterFlockCount').textContent = all.filter(n => n.is_flock).length;
                 document.getElementById('filterPoliceCount').textContent = all.filter(n => n.is_police_vehicle).length;
-                document.getElementById('filterDroneCount').textContent = all.filter(n => n.is_drone).length;
                 document.getElementById('totalVisibleCount').textContent = networks.length;
 
                 this.networkList.innerHTML = networks.map(network => {
@@ -1019,9 +1024,6 @@
                     } else if (network.is_flock) {
                         borderClass = 'border-pink-700/80 bg-pink-950/40 hover:bg-pink-900/50 shadow-sm shadow-pink-900/30';
                         badge = `<div class="text-[10px] text-pink-300 font-extrabold flex items-center gap-1">🚨 ${network.flock_type || 'FLOCK'} (${network.alpr_confidence})</div>`;
-                    } else if (network.is_drone) {
-                        borderClass = 'border-amber-700/80 bg-amber-950/40 hover:bg-amber-900/50 shadow-sm shadow-amber-900/30';
-                        badge = `<div class="text-[10px] text-amber-300 font-extrabold flex items-center gap-1">🛸 ${network.drone_type || 'DRONE'} (${network.drone_confidence})</div>`;
                     }
 
                     return `
@@ -1071,16 +1073,14 @@
                         const response = await fetch('/api/statistics');
                         stats = await response.json();
                     }
-                    if (!stats) return;
                     
                     document.getElementById('totalNetworks').textContent = stats.total_networks || 0;
                     document.getElementById('activeNetworks').textContent = stats.active_networks || 0;
                     document.getElementById('highRiskNetworks').textContent = stats.high_risk_networks || 0;
                     document.getElementById('openNetworks').textContent = stats.open_networks || 0;
                     document.getElementById('hiddenNetworks').textContent = stats.hidden_networks || 0;
-                    document.getElementById('flockCameras').textContent = stats.flock_cameras || stats.flock_count || 0;
-                    document.getElementById('policeVehicles').textContent = stats.police_vehicles || stats.police_count || 0;
-                    document.getElementById('droneVehicles').textContent = stats.drones || stats.drone_count || 0;
+                    document.getElementById('flockCameras').textContent = stats.flock_cameras || 0;
+                    document.getElementById('policeVehicles').textContent = stats.police_vehicles || 0;
                 } catch (error) {
                     console.error('Failed to update statistics:', error);
                 }
@@ -1099,7 +1099,6 @@
 
                 if (network.is_flock) dot.classList.add('flock-camera');
                 if (network.is_police_vehicle) dot.classList.add('police-vehicle');
-                if (network.is_drone) dot.classList.add('drone-uav');
 
                 // Dynamic radar screen radius
                 const screenRect = this.radarScreen.getBoundingClientRect();
@@ -1123,11 +1122,10 @@
                 spike.className = 'direction-spike';
                 if (network.is_police_vehicle) spike.classList.add('spike-police');
                 else if (network.is_flock)     spike.classList.add('spike-flock');
-                else if (network.is_drone)     spike.classList.add('spike-drone');
                 else                            spike.classList.add('spike-normal');
 
                 const angleRad = (network.position.angle * Math.PI) / 180;
-                const dotRadius = (network.is_flock || network.is_police_vehicle || network.is_drone) ? 7 : 5;
+                const dotRadius = network.is_flock || network.is_police_vehicle ? 7 : 5;
                 const spikeOffsetX = x + Math.cos(angleRad) * dotRadius;
                 const spikeOffsetY = y + Math.sin(angleRad) * dotRadius;
 
@@ -1136,8 +1134,8 @@
                 spike.style.transform = `translate(-50%, 0) rotate(${network.position.angle + 90}deg)`;
                 this.radarScreen.appendChild(spike);
 
-                // Trend Movement Arrow (Flock/Police/Drone)
-                if ((network.is_flock || network.is_police_vehicle || network.is_drone) && network._rssiTrend) {
+                // Trend Movement Arrow (Flock/Police)
+                if ((network.is_flock || network.is_police_vehicle) && network._rssiTrend) {
                     const trendSymbol = { approaching: '▲', receding: '▼', stable: '·' };
                     const trendLabel = document.createElement('div');
                     trendLabel.className = `trend-label ${network._rssiTrend}`;
@@ -1161,6 +1159,8 @@
                 if (info) info.style.display = 'none';
             }
         });
-    </script>
+            const mapButton = document.getElementById('mapButton');
+        if (mapButton) mapButton.addEventListener('click', () => { if (window.AndroidBridge && window.AndroidBridge.openMap) window.AndroidBridge.openMap(); });
+</script>
 </body>
 </html>

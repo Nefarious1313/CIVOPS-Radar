@@ -434,6 +434,12 @@
     </style>
 </head>
 <body class="flex flex-col">
+    <div style="position:sticky;top:0;z-index:9999;background:#0f172a;padding:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="color:#cbd5e1;font-size:11px;"><input type="checkbox" id="toggleScannerAudio"> Police Scanner Audio</label>
+        <audio id="scannerAudio" src="https://broadcastify.com/listen/feed/1" preload="none" controls style="height:24px;"></audio>
+        <label style="color:#cbd5e1;font-size:11px;"><input type="checkbox" id="toggleCrime"> Crime Incidents Layer</label>
+        <button id="mapButton" style="background:#312e81;color:#c7d2fe;border:1px solid #4338ca;padding:4px 8px;border-radius:4px;font-size:11px;">SHOW MAP</button>
+    </div>
     <div class="scanlines"></div>
 
     <!-- TOP HUD BAR -->
@@ -508,6 +514,8 @@
                     <span>+ DRONE</span>
                 </button>
             </div>
+
+
         </section>
 
         <!-- CENTER VIEWPORT: HUD Radar Display -->
@@ -1146,6 +1154,8 @@
                 if (info) info.style.display = 'none';
             }
         });
-    </script>
+            const mapButton = document.getElementById('mapButton');
+        if (mapButton) mapButton.addEventListener('click', () => { if (window.AndroidBridge && window.AndroidBridge.openMap) window.AndroidBridge.openMap(); });
+</script>
 </body>
 </html>

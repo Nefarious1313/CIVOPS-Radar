@@ -63,8 +63,25 @@ class TestFlockStatusEndpoint(unittest.TestCase):
 
 
 class TestFlockDemoEndpoint(unittest.TestCase):
+    # Fixed demo BSSIDs used by /api/flock/demo, so we can clean up afterwards.
+    DEMO_BSSIDS = ('b4:1e:52:84:a1:0b', '70:c9:4e:32:19:f0', '00:03:7f:88:cd:e1')
+
     def setUp(self):
         self.client = app.test_client()
+
+    def tearDown(self):
+        """Remove the demo rows this test class injected into the live DB."""
+        try:
+            import sqlite3
+            from server.app import DB_PATH
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute(
+                "DELETE FROM scans WHERE bssid IN (?,?,?)", self.DEMO_BSSIDS
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
     def test_flock_demo_get_returns_200(self):
         """GET /api/flock/demo must return HTTP 200."""

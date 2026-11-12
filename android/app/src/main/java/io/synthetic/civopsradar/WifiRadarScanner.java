@@ -1,11 +1,18 @@
 package io.synthetic.civopsradar;
 
 import android.content.BroadcastReceiver;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -37,6 +44,9 @@ public class WifiRadarScanner {
         public String vendor;
         public String lastSeen;
         public int scanCount;
+        public double latitude;
+        public double longitude;
+        public boolean hasLocation;
 
         public boolean isFlock;
         public String flockType;
@@ -56,9 +66,14 @@ public class WifiRadarScanner {
     private final Context context;
     private final WifiManager wifiManager;
     private final Map<String, ScannedNetwork> networks = new ConcurrentHashMap<>();
+    private final Map<String, Integer> prevLevel = new ConcurrentHashMap<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean isScanning = false;
     private BroadcastReceiver wifiScanReceiver;
+    private LocationManager locationManager;
+    private double lastLat = 0;
+    private double lastLon = 0;
+    private boolean hasLocation = false;
 
     private final SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
 
@@ -66,6 +81,34 @@ public class WifiRadarScanner {
         this.context = context.getApplicationContext();
         this.wifiManager = (WifiManager) this.context.getSystemService(Context.WIFI_SERVICE);
         setupReceiver();
+        // notification channel
+        NotificationManager nm = (NotificationManager) this.context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel("radar_alerts", "Radar Alerts", NotificationManager.IMPORTANCE_HIGH);
+            nm.createNotificationChannel(ch);
+        }
+        locationManager = (LocationManager) this.context.getSystemService(Context.LOCATION_SERVICE);
+        try {
+            LocationListener listener = new LocationListener() {
+                public void onLocationChanged(Location l) {
+                    if (l != null) { lastLat = l.getLatitude(); lastLon = l.getLongitude(); hasLocation = true; }
+                }
+                public void onStatusChanged(String p, int s, android.os.Bundle e) {}
+                public void onProviderEnabled(String p) {}
+                public void onProviderDisabled(String p) {}
+            };
+            if (locationManager != null) {
+                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 1, listener);
+                }
+                if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000, 1, listener);
+                }
+                Location last = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (last == null) last = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                if (last != null) { lastLat = last.getLatitude(); lastLon = last.getLongitude(); hasLocation = true; }
+            }
+        } catch (SecurityException ignored) {}
     }
 
     private void setupReceiver() {
@@ -79,18 +122,26 @@ public class WifiRadarScanner {
         };
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
-        context.registerReceiver(wifiScanReceiver, intentFilter);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(wifiScanReceiver, intentFilter, Context.RECEIVER_EXPORTED);
+        } else {
+            context.registerReceiver(wifiScanReceiver, intentFilter);
+        }
     }
 
     public synchronized void startScanning() {
         if (isScanning) return;
         isScanning = true;
+        // Show whatever the OS already has cached immediately
+        processScanResults();
         scanRunnable.run();
+        refreshRunnable.run();
     }
 
     public synchronized void stopScanning() {
         isScanning = false;
         handler.removeCallbacks(scanRunnable);
+        handler.removeCallbacks(refreshRunnable);
     }
 
     public void clearData() {
@@ -106,8 +157,18 @@ public class WifiRadarScanner {
                     wifiManager.startScan();
                 }
             } catch (Exception ignored) {}
-            // Request scan every 10 seconds to respect modern Android scan throttling
-            handler.postDelayed(this, 10000);
+            // Request a fresh scan ~every 30s to respect modern Android scan throttling (4 scans / 2 min)
+            handler.postDelayed(this, 30000);
+        }
+    };
+
+    // Periodically re-read cached scan results so the UI stays live even when a fresh scan is throttled
+    private final Runnable refreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isScanning) return;
+            processScanResults();
+            handler.postDelayed(this, 3000);
         }
     };
 
@@ -168,6 +229,22 @@ public class WifiRadarScanner {
                 net.isOpen = isOpen;
                 net.vendor = vendor;
                 net.lastSeen = nowStr;
+                net.latitude = lastLat;
+                net.longitude = lastLon;
+                net.hasLocation = hasLocation;
+
+                // Movement alert: signal getting significantly stronger
+                Integer prev = prevLevel.get(bssid);
+                if (prev != null && level - prev >= 6) {
+                    sendAlert("Target approaching: " + (ssid.isEmpty() ? bssid : ssid) + " (+" + (level - prev) + " dBm)");
+                }
+                if (flock.isFlock || police.isPoliceVehicle || drone.isDrone) {
+                    // new detection alert on first sight
+                    if (net.scanCount == 1) {
+                        sendAlert("Detected: " + (flock.isFlock ? "Flock" : police.isPoliceVehicle ? "Police" : "Drone") + " - " + (ssid.isEmpty() ? bssid : ssid));
+                    }
+                }
+                prevLevel.put(bssid, level);
                 net.isFlock = flock.isFlock;
                 net.flockType = flock.deviceType;
                 net.alprConfidence = flock.confidence;
@@ -213,6 +290,9 @@ public class WifiRadarScanner {
                 obj.put("vendor", net.vendor);
                 obj.put("last_seen", net.lastSeen);
                 obj.put("scan_count", net.scanCount);
+                obj.put("latitude", net.latitude);
+                obj.put("longitude", net.longitude);
+                obj.put("has_location", net.hasLocation);
                 obj.put("is_flock", net.isFlock);
                 obj.put("flock_type", net.flockType != null ? net.flockType : "");
                 obj.put("alpr_confidence", net.alprConfidence != null ? net.alprConfidence : "NONE");
@@ -291,6 +371,24 @@ public class WifiRadarScanner {
 
     public String getExportJson() {
         return getSignalsJson();
+    }
+
+    private void sendAlert(String message) {
+        try {
+            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            Notification.Builder b;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                b = new Notification.Builder(context, "radar_alerts");
+            } else {
+                b = new Notification.Builder(context);
+            }
+            b.setContentTitle("CIVOPS Radar Alert")
+             .setContentText(message)
+             .setSmallIcon(android.R.drawable.ic_dialog_alert)
+             .setAutoCancel(true);
+            nm.notify((int) System.currentTimeMillis(), b.build());
+        } catch (Exception ignored) {}
     }
 
     public void destroy() {
